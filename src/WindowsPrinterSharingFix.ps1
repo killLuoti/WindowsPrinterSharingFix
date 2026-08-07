@@ -2847,25 +2847,25 @@ function Detect-Win {
     Write-Host " 时区: " -NoNewline
     Write-Host "$(Get-TimeZone | Select-Object -ExpandProperty Id) | $(Get-Date -Format 'HH.mm.ss')" -ForegroundColor Red
     Write-Host " 作者: @KHAIRUDINFAHMI (2026) | 汉化版" -ForegroundColor Magenta
-    Write-Host ("=" * 175) -ForegroundColor DarkGray
+    Write-Host ("=" * 238) -ForegroundColor DarkGray
 
     try {
         $rawUI = $Host.UI.RawUI
         $bufSize = $rawUI.BufferSize
-        if ($bufSize.Width -lt 180) {
-            $bufSize.Width = 180
+        if ($bufSize.Width -lt 245) {
+            $bufSize.Width = 245
             $rawUI.BufferSize = $bufSize
         }
         $winSize = $rawUI.WindowSize
-        if ($winSize.Width -lt 180) {
-            $winSize.Width = 180
+        if ($winSize.Width -lt 245) {
+            $winSize.Width = 245
             $rawUI.WindowSize = $winSize
         }
     } catch {}
 
-    $cw1 = 62
-    $cw2 = 55
-    $cw3 = 58
+    $cw1 = 80
+    $cw2 = 78
+    $cw3 = 80
     $totalW = $cw1 + $cw2 + $cw3
 
     Write-Host (" 核心修复与网络服务".PadRight($cw1)) -ForegroundColor Cyan -NoNewline
