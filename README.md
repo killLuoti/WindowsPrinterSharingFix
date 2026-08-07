@@ -1,400 +1,199 @@
-# Windows Printer Sharing Fix
+# Windows 打印机共享修复工具
 
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011%20%7C%20Server-0078D6?logo=windows&logoColor=white)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white)
 ![Version](https://img.shields.io/badge/Version-2.3.2-blue)
 
-A simple but powerful tool to fix common Windows printer sharing problems. Works on Windows 10, 11 (including 24H2+), ARM64, and Windows Server 2025.
+一个简单而强大的工具，用于修复常见的 Windows 打印机共享问题。适用于 Windows 10、11（包括 24H2+）、ARM64 和 Windows Server 2025。
 
 ---
 
-## What it fixes
+## 修复内容
 
-Windows updates often break network printing with cryptic errors. This tool fixes them:
-- `0x0000011b`, `0x00000709`, `0x00000bc4`, `0x80070035`, `0x00000040`, `0x0000007e`, etc.
+Windows 更新经常破坏网络打印，显示难以理解的错误代码。此工具可修复以下错误：
+
+- `0x0000011b`、`0x00000709`、`0x00000bc4`、`0x80070035`、`0x00000040`、`0x0000007e` 等
 
 ---
 
-## 89 Repair Options
+## 89 项修复选项
 
-### Column 1: Core & Network [01-30]
-| # | Feature |
+### 第 1 列：核心与网络 [01-30]
+| # | 功能 |
 |---|---|
-| 01 | Patch Error 0x0000011b (RpcAuthnLevelPrivacy) |
-| 02 | Bypass Error 0x00000709 / 0x7c (Point and Print) |
-| 03 | Bypass Error 0x00000bc4 (No Printers Found) |
-| 04 | Fix Error 0x80070035 (Automate Network Services) |
-| 05 | Disable Client-Side Rendering (Error 0x6d1) |
-| 06 | Fix Error 0x80070005 (Reset Spooler ACL) |
-| 07 | Fix Error 0x00000040 (Network Unavailable) |
-| 08 | Fix Error 0x00000002 (CopyFilesPolicy) |
-| 09 | Fix Error 0x0000007e (RPC Bitness Mismatch) |
-| 10 | Complete Network Reset (DNS, Winsock, NetBIOS) |
-| 11 | Force Network Profile to Private |
-| 12 | Force Disable Password Protected Sharing |
-| 13 | Enable RPC via Named Pipes & TCP |
-| 14 | Configure Firewall File & Printer Sharing |
-| 15 | SMB 1.0 Legacy Protocol Management (ON/OFF) |
-| 16 | Disable SMB Signing (Fix Win 11 NAS Access) |
-| 17 | Force Modern SMB2/SMB3 Topology |
-| 18 | Prioritize SMB in Network Provider Order |
-| 19 | Disable IPv6 Stack |
-| 20 | Enable mDNS & LLMNR (Discovery Protocols) |
-| 21 | Configure WSD Firewall Rules (Port 3702) |
-| 22 | Enable IPP & Mopria Sharing Foundation |
-| 23 | Resolve Hyper-V/WSL Virtual Network Conflicts |
-| 24 | Install Legacy LPR/LPD Protocols |
-| 25 | Remote Network Printer Discovery |
-| 26 | WSD to Standard TCP/IP Port Converter |
-| 27 | Network Socket Re-init (Selective Purge) |
-| 28 | Rescue Network Profile (Auto Watchdog) |
-| 29 | Manually Inject Standard TCP/IP Port |
-| 30 | Force Initialize WSD Print Device |
+| 01 | 修复错误 0x0000011b (RpcAuthnLevelPrivacy) |
+| 02 | 绕过错误 0x00000709 / 0x7c（即插即用） |
+| 03 | 绕过错误 0x00000bc4（未找到打印机） |
+| 04 | 修复错误 0x80070035（自动化网络服务） |
+| 05 | 禁用客户端渲染（错误 0x6d1） |
+| 06 | 修复错误 0x80070005（重置后台处理程序 ACL） |
+| 07 | 修复错误 0x00000040（网络不可用） |
+| 08 | 修复错误 0x00000002 (CopyFilesPolicy) |
+| 09 | 修复错误 0x0000007e（RPC 位数不匹配） |
+| 10 | 完整网络重置（DNS、Winsock、NetBIOS） |
+| 11 | 强制网络配置文件为专用 |
+| 12 | 强制禁用密码保护共享 |
+| 13 | 通过命名管道和 TCP 启用 RPC |
+| 14 | 配置防火墙文件和打印机共享 |
+| 15 | SMB 1.0 旧版协议管理（开/关） |
+| 16 | 禁用 SMB 签名（修复 Win 11 NAS 访问） |
+| 17 | 强制现代 SMB2/SMB3 拓扑 |
+| 18 | 将 SMB 置于网络提供程序顺序首位 |
+| 19 | 禁用 IPv6 协议栈 |
+| 20 | 启用 mDNS 和 LLMNR（发现协议） |
+| 21 | 配置 WSD 防火墙规则（端口 3702） |
+| 22 | 启用 IPP 和 Mopria 共享基础 |
+| 23 | 解决 Hyper-V/WSL 虚拟网络冲突 |
+| 24 | 安装旧版 LPR/LPD 协议 |
+| 25 | 远程网络打印机发现 |
+| 26 | WSD 到标准 TCP/IP 端口转换器 |
+| 27 | 网络套接字重新初始化（选择性清理） |
+| 28 | 恢复网络配置文件（自动监视） |
+| 29 | 手动注入标准 TCP/IP 端口 |
+| 30 | 强制初始化 WSD 打印设备 |
 
-### Column 2: Spooler, Drivers & Policies [31-59]
-| # | Feature |
+### 第 2 列：后台处理程序、驱动与策略 [31-59]
+| # | 功能 |
 |---|---|
-| 31 | Hard Reset Print Spooler (Purge Queue) |
-| 32 | Re-initialize RPC & DCOM Services |
-| 33 | Remote Target Spooler Restart |
-| 34 | Configure Spooler Auto-Restart on Crash |
-| 35 | Purge Stale Spooler Dependencies |
-| 36 | Deploy Spooler Watchdog (5-Min Audit) |
-| 37 | Force Purge Print Queue (.shd/.spl) |
-| 38 | Spooler Dependency Registry Reset |
-| 39 | Driver Management (Print Server Properties) |
-| 40 | Disable Print Driver Isolation |
-| 41 | Universal Print Class Driver V4 Fix |
-| 42 | Toggle PCL vs. PostScript Driver Mode |
-| 43 | Orphaned Driver Sweeper (pnputil) |
-| 44 | Bypass 'Driver is currently in use' |
-| 45 | Ghost USB Port & Copy Eliminator |
-| 46 | Force Remove Ghost Printers |
-| 47 | Fix Microsoft Edge / UWP Printing |
-| 48 | Reinstall Microsoft Print to PDF/XPS |
-| 49 | Browser Print Sandbox Fix (Chromium) |
-| 50 | Force Permanent Default Printer |
-| 51 | Force-Set Default Printer (Reg Bypass) |
-| 52 | Fix RDP Printer Terminal Services |
-| 53 | Auto-Sanitize Printer Share Name |
-| 54 | Downgrade LSA Protection (Legacy Auth) |
-| 55 | Bypass Smart App Control (SAC) |
-| 56 | Bypass Advanced ServerList Point & Print |
-| 57 | Bypass UAC Admin Network TokenFilter |
-| 58 | Force NTLMv2 Response Compliance |
-| 59 | Manage Windows Protected Print (WPP) |
+| 31 | 硬重置打印后台处理程序（清除队列） |
+| 32 | 重新初始化 RPC 和 DCOM 服务 |
+| 33 | 远程目标后台处理程序重启 |
+| 34 | 配置后台处理程序崩溃时自动重启 |
+| 35 | 清除过期后台处理程序依赖项 |
+| 36 | 部署后台处理程序监视（每 5 分钟审计） |
+| 37 | 强制清除打印队列 (.shd/.spl) |
+| 38 | 后台处理程序依赖项注册表重置 |
+| 39 | 驱动管理（打印服务器属性） |
+| 40 | 禁用打印驱动隔离 |
+| 41 | 通用打印类驱动 V4 修复 |
+| 42 | 切换 PCL 与 PostScript 驱动模式 |
+| 43 | 孤立驱动清理 (pnputil) |
+| 44 | 绕过「驱动当前正在使用」 |
+| 45 | 幽灵 USB 端口和副本清除器 |
+| 46 | 强制移除幽灵打印机 |
+| 47 | 修复 Microsoft Edge / UWP 打印 |
+| 48 | 重新安装 Microsoft Print to PDF/XPS |
+| 49 | 浏览器打印沙箱修复 (Chromium) |
+| 50 | 强制永久默认打印机 |
+| 51 | 强制设置默认打印机（注册表绕过） |
+| 52 | 修复 RDP 打印机终端服务 |
+| 53 | 自动清理打印机共享名称 |
+| 54 | 降级 LSA 保护（旧版身份验证） |
+| 55 | 绕过智能应用控制 (SAC) |
+| 56 | 绕过高级 ServerList 即插即用 |
+| 57 | 绕过 UAC 管理员网络令牌筛选 |
+| 58 | 强制 NTLMv2 响应合规性 |
+| 59 | 管理 Windows 受保护打印 (WPP) |
 
-### Column 3: Diagnostics & Automation [60-89]
-| # | Feature |
+### 第 3 列：诊断与自动化 [60-89]
+| # | 功能 |
 |---|---|
-| 60 | Inject Credentials into Vault Permanently |
-| 61 | Purge Stale Credentials from Vault |
-| 62 | Bypass Credential Guard (Strict NTLM) |
-| 63 | Cross-User Credential Mapping |
-| 64 | Pre-execution Registry Backup (Spooler) |
-| 65 | Rollback Registry from Backup |
-| 66 | Generate System Restore Point (Security) |
-| 67 | System File Checker & DISM Restoration |
-| 68 | Restart BITS (Background Transfer) |
-| 69 | Windows Update & Blocker Management |
-| 70 | Launch Native Windows Troubleshooter |
-| 71 | Force Printer Online Status |
-| 72 | Launch Services.msc |
-| 73 | Detect OS Version & Build Architecture |
-| 74 | Ping & Port 445/135 Diagnostics |
-| 75 | View Execution Logs |
-| 76 | Audit Last 20 Print Service Error Logs |
-| 77 | System Diagnostics Audit |
-| 78 | PrintService Event Log Parser (Top 5) |
-| 79 | Generate HTML Diagnostic Report |
-| 80 | Detect GPO Intervention (Policy Scan) |
-| 81 | PrintBRM (Backup/Restore Migration) |
-| 82 | Enable SMB Guest Access & Drop Anonymous Blocks |
-| **83** | **EXTREME PATH (WIN 11 24H2/25H2/26H2+ & ARM64)** |
-| **84** | **ALLFIX (50 AUTOMATED FIXES)** |
-| **85** | **SILENT ALLFIX & REBOOT (ZERO-PROMPT)** |
-| 86 | Map Local Port to UNC Path (Bypass 0x00000709) |
-| 87 | Remove Injected Local Port (UNC) |
-| 88 | Reboot System |
-| 89 | EXIT SCRIPT |
+| 60 | 将凭据永久注入凭据管理器 |
+| 61 | 清除凭据管理器中的过期凭据 |
+| 62 | 绕过凭据保护（严格 NTLM） |
+| 63 | 跨用户凭据映射 |
+| 64 | 执行前注册表备份（后台处理程序） |
+| 65 | 从备份回滚注册表 |
+| 66 | 生成系统还原点（安全） |
+| 67 | 系统文件检查器和 DISM 还原 |
+| 68 | 重启 BITS（后台传输） |
+| 69 | Windows 更新与阻止管理 |
+| 70 | 启动原生 Windows 疑难解答 |
+| 71 | 强制打印机在线状态 |
+| 72 | 启动 Services.msc |
+| 73 | 检测系统版本和构建架构 |
+| 74 | Ping 与端口 445/135 诊断 |
+| 75 | 查看执行日志 |
+| 76 | 审计最近 20 条打印服务错误日志 |
+| 77 | 系统诊断审计 |
+| 78 | PrintService 事件日志解析器（前 5 条） |
+| 79 | 生成 HTML 诊断报告 |
+| 80 | 检测 GPO 干预（策略扫描） |
+| 81 | PrintBRM（备份/还原迁移） |
+| 82 | 启用 SMB 来宾访问并取消匿名阻止 |
+| 83 | 极端修复路径（Win 11 24H2/25H2/26H2+ 和 ARM64） |
+| 84 | 全部修复（50 项自动修复） |
+| 85 | 静默全部修复并重启（零提示） |
+| 86 | 映射本地端口到 UNC 路径（绕过 0x00000709） |
+| 87 | 移除已注入的本地端口 (UNC) |
+| 88 | 重启系统 |
+| 89 | 退出脚本 |
 
 ---
 
-## ⚠️ Good to Know: Under the Hood
+## 界面截图
 
-To keep things completely transparent, if you run the automated playbooks (`[83]`, `[84]`, or `[85]`), the script does a few extra things in the background that don't pop up on the screen. This is done to make sure the fixes actually stick:
-
-- **GPO Override (`gpupdate /force`):** It forces a local Group Policy update right before modifying the registry so your domain controller doesn't immediately overwrite the fixes.
-- **Scheduled Tasks Injection:** The script deploys background tasks under Windows Task Scheduler for persistent repairs and diagnostics:
-  - `PrinterFixPostUpdate` (runs on startup) & `PrinterFixDaily` (runs daily at 10:00 AM): Automatically re-apply critical registry fixes in case Windows Updates reset them.
-  - `SpoolerWatchdog` (runs every 5 minutes): Checks and automatically restarts the Print Spooler service if a driver crash stops it.
-  > [!NOTE]
-  > All registered tasks are configured to bypass laptop AC constraints (they will execute successfully even when unplugged). However, because `SpoolerWatchdog` runs periodically every 5 minutes, it can cause minor battery drain on laptops over time. If you want to maximize battery life, you can easily disable or delete it through the Task Scheduler GUI or by running: `Disable-ScheduledTask -TaskName "SpoolerWatchdog"` in PowerShell (as Administrator).
-- **Network & Credential Wipes:** It runs commands like `klist purge`, `ipconfig /flushdns`, and `nbtstat -RR`. If you use Extreme Path `[83]`, it also forcefully wipes stale network credentials from your Windows Vault using `cmdkey`. 
-- **Registry Overrides [86/87]:** If you use the UNC Bypass feature and Windows blocks the standard API, the script will forcefully inject or delete the port directly inside `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Ports`. 
-- **Force Kills [37] & [44]:** When you purge the queue or try to bypass a locked driver, the script sends a direct termination signal (`Stop-Process -Force`) to `splwow64`, `PrintIsolationHost`, and `printfilterpipelinesvc`. This drops all active print jobs immediately.
-- **Driver Signature & Policy Bypass (KB5089549):** Temporarily sets `VulnerableDriverBlocklistEnable = 0` and `VerifiedAndReputablePolicyState = 0` to bypass driver block restrictions introduced in the post-KB5089549 cumulative update.
-- **Strict Name & DNS Aliasing:** Configures `DisableStrictNameChecking = 1` and `DnsOnWire = 1` to ensure you can map/connect to printer shares using DNS CNAMEs or hostname aliases instead of only IPs.
-- **NTLM Minimum Security Relaxation:** In Extreme Path `[83]`, sets client/server NTLM requirements to allow legacy authentication handshakes and prevent credential validation errors on Workgroups.
-
----
-
-## Repository Structure
-
-```text
-WindowsPrinterSharingFix/
-├── src/
-│   └── WindowsPrinterSharingFix.ps1           # Core PowerShell source code (89 features)
-├── assets/
-│   ├── icon.ico                                # Application icon
-│   └── khairudinfahmi_cert.cer                 # Code signing certificate
-├── docs/
-│   └── documentation.html                      # Offline HTML Documentation
-├── build/
-│   ├── Compile-ToExe.ps1                       # Build automation script
-│   └── installer.iss                           # Inno Setup installer script
-├── release/
-│   ├── WindowsPrinterSharingFix.exe            # Compiled portable executable
-│   └── WindowsPrinterSharingFix_Installer.exe  # Full setup installer
-├── .gitignore
-├── CHANGELOG.md                                # Version history
-├── CONTRIBUTING.md                             # Contribution guidelines
-├── LICENSE                                     # GPL-3.0 License
-└── README.md                                   # Primary documentation
+```
+ 用户: admin | 计算机名: OFFICE-PC | 系统: WINDOWS 11 PRO 26100 64位 | Windows 打印机共享修复工具 v2.3.2
+ 时区: China Standard Time | 08.00.00
+ 作者: @KHAIRUDINFAHMI (2026) | 汉化版
+ ===============================================================================================================
+ 核心修复与网络服务                    后台处理程序、驱动与策略                   诊断与自动化
+ [01] 修复错误 0x0000011b              [31] 硬重置打印后台处理程序                [60] 将凭据永久注入凭据管理器
+ ...
 ```
 
 ---
 
-## Download & Installation
+## 系统要求
 
-Pre-compiled binaries are available in the **[Releases](../../releases)** tab:
-
-| File | Description |
+| 系统 | 支持状态 |
 |---|---|
-| `WindowsPrinterSharingFix.exe` | Portable Executable — Run directly as Administrator |
-| `WindowsPrinterSharingFix_Installer.exe` | Full Installer (includes start menu shortcuts & code signing) |
+| Windows 10（所有版本） | 完全支持 |
+| Windows 11 21H2 - 23H2 | 完全支持 |
+| Windows 11 24H2 / 25H2 / 26H2+ | 支持（需要极端修复路径 [83]） |
+| Windows 11 ARM64（骁龙） | 支持 |
+| Windows Server 2012 / 2016 / 2019 / 2022 / 2025 | 完全支持 |
+| Windows 7、8、8.1 | 部分支持（仅注册表修复） |
 
 ---
 
-## Usage Instructions
+## 安装说明
 
-### Quick Start (Recommended for Beginners)
-1. Download the installer from the **[Releases](../../releases)** tab.
-2. Run the application as an **Administrator**.
-3. Type `64` → Enter (Execute registry backup).
-4. Type `84` → Enter (Execute ALLFIX - 50 automated fixes).
-5. Reboot your system.
+### 下载即用版
 
-### Specific Workflow for Windows 11 24H2/25H2/26H2+
-1. Type `64` → Enter (Execute registry backup).
-2. Type `83` → Enter (Execute Extreme Path fixes).
-3. Reboot your system.
+从 [Releases](https://github.com/khairudinfahmi/WindowsPrinterSharingFix/releases) 页面下载预编译的二进制文件：
 
-### Emergency Mode (Unattended)
-- Type `85` → Enter (Silent AllFix: Executes all fixes and forcibly reboots the system without user prompts).
-
-### Help & Documentation
-- Type `?` → Display the help guide.
-- Type `? 7` → Display detailed documentation for feature 7.
-- Type `? all` → Open the complete offline HTML.
-
----
-
-## Interactive Console Interface
-
-```text
- USER: admin | COMPUTERNAME: OFFICE-PC | OS: WINDOWS 11 PRO 26100 64BIT | Windows Printer Sharing Fix v2.3.2
- =======================================================================================================
-
- CORE FIXES & NETWORK SERVICES              SPOOLER, DRIVERS & POLICIES              DIAGNOSTICS & AUTOMATION
-
- [01] Patch Error 0x0000011b                 [31] Hard Reset Print Spooler             [60] Inject Credentials into Vault
- [02] Bypass Error 0x00000709                [32] Re-initialize RPC & DCOM             [61] Purge Stale Credentials
- ...                                         ...                                       ...
- [30] Force Initialize WSD Print Device      [59] Manage Windows Protected Print       [84] ALLFIX (50 AUTOMATED STEPS)
-                                                                                        [85] SILENT ALLFIX & REBOOT
- -----------------------------------------------------------------------------------------------------------
- :   NOTE:                                                                              :
- :   [84] ALLFIX (50 Steps) | [83] EXTREME PATH (Win11) | [85] SILENT ALLFIX           :
- :   [?] HELP | [? 7] INFO | [? all] HTML | TIP: If 'Check Printer Name' error, use Option [86] :
- -----------------------------------------------------------------------------------------------------------
-
-Type option: _
-```
-
----
-
-## System Compatibility
-
-| OS | Support Status |
+| 文件 | 说明 |
 |---|---|
-| Windows 10 (All Builds) | Fully Supported |
-| Windows 11 21H2 - 23H2 | Fully Supported |
-| Windows 11 24H2 / 25H2 / 26H2+ | Supported (Requires Extreme Path `[83]`) |
-| Windows 11 ARM64 (Snapdragon) | Supported |
-| Windows Server 2012 / 2016 / 2019 / 2022 / 2025 | Fully Supported |
-| Windows 7, 8, 8.1 | Partial / Registry Support Only |
+| `WindowsPrinterSharingFix_CN.exe` | 便携式可执行文件 — 直接以管理员身份运行 |
+| `WindowsPrinterSharingFix_CN_Installer.exe` | 完整安装程序（包含开始菜单快捷方式和代码签名） |
 
----
+### 方法 1：便携版（推荐）
 
-## Building from Source
+1. 下载 `WindowsPrinterSharingFix_CN.exe`
+2. 右键单击 → 以管理员身份运行
+3. 输入 `64` → 回车（执行注册表备份）
+4. 输入 `84` → 回车（执行全部修复 - 50 项自动修复）
+5. 重启系统
 
-### Prerequisites
+### 方法 2：从源码编译
+
+需要：
 - PowerShell 5.1+
-- [ps2exe](https://www.powershellgallery.com/packages/ps2exe) module (installed automatically by the build script)
-- [Inno Setup 6](https://jrsoftware.org/isdl.php) (for compiling the installer)
-
-### Compile Portable EXE
+- [ps2exe](https://www.powershellgallery.com/packages/ps2exe) 模块（编译脚本会自动安装）
+- [Inno Setup 6](https://jrsoftware.org/isdl.php)（用于编译安装程序）
 
 ```powershell
-# From the project root, execute:
+# 从项目根目录执行：
 .\build\Compile-ToExe.ps1
 ```
 
-Or compile manually:
-```powershell
-# Install the ps2exe module (if not present)
-Install-Module -Name ps2exe -Force -Scope CurrentUser
+## 注意事项
 
-# Compile
-Invoke-ps2exe -inputFile src\WindowsPrinterSharingFix.ps1 -outputFile release\WindowsPrinterSharingFix.exe `
-    -iconFile assets\icon.ico -requireAdmin `
-    -title "Windows Printer Sharing Fix" -company "khairudinfahmi"
-```
+- **需要管理员权限**：此工具必须以管理员身份运行才能修改注册表键和管理 Windows 子系统服务。
+- **备份必须执行**：在运行任何自动修复**之前**，请务必执行注册表备份（选项 [64]）。
+- **必须重启**：需要重启系统才能提交注册表更改并重启网络堆栈。
+- **离线支持**：此工具完全离线运行，无需网络连接。
 
-### Compile Installer
+## 许可证
 
-```powershell
-# Ensure WindowsPrinterSharingFix.exe exists in the release/ directory
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" build\installer.iss
-```
+本项目基于 [GPL-3.0 许可证](LICENSE) 开源发布。
 
----
+## 原作者
 
-## Testing & Verification
+[@khairudinfahmi](https://github.com/khairudinfahmi) — 2026
 
-Testing is split into static code analysis, isolated execution tests, and scheduled tasks verification.
+## 汉化版
 
----
-
-### Static Analysis & Shift-Left Validation
-
-These steps ensure the codebase is clean, follows styling standards, and is free of syntax errors before git commit. Run these commands from the project root folder:
-
-#### Test 1: PSScriptAnalyzer Pre-Commit Verification
-To run standard security and styling rule scans on the script:
-```powershell
-# Install the analyzer module if missing
-Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
-
-# Run analysis against the script
-Invoke-ScriptAnalyzer -Path src/WindowsPrinterSharingFix.ps1
-```
-
-#### Test 2: PowerShell AST Syntax Validation
-Verify that the script compiles successfully without unclosed brackets or parse errors:
-```powershell
-$errors = $null
-[System.Management.Automation.Language.Parser]::ParseFile(
-    (Resolve-Path "src/WindowsPrinterSharingFix.ps1"),
-    [ref]$null,
-    [ref]$errors
-)
-if ($errors) {
-    Write-Host "[-] Syntax errors detected:" -ForegroundColor Red
-    $errors | ForEach-Object { Write-Host "Line $($_.Extent.StartLineNumber): $($_.Message)" -ForegroundColor Red }
-} else {
-    Write-Host "[SUCCESS] PowerShell script AST validation passed." -ForegroundColor Green
-}
-```
-
----
-
-### Isolated Execution Testing
-
-To safely run the script in a clean, sandboxed workspace without affecting your host system:
-
-#### Test 3: Dev Containers & WSL Isolation
-For lightweight container testing, configure a development container using WSL or Docker:
-1. Make sure Docker Desktop and the VS Code Dev Containers extension are installed.
-2. Create a `.devcontainer` configuration referencing a PowerShell image.
-3. Reopen the project folder inside the container to run isolated manual tests.
-
-#### Test 4: Session-Level Constrained Language Mode (CLM)
-To verify that the script behaves correctly under constrained system environments, run a test session under CLM:
-```powershell
-# Start a new PowerShell session in Constrained Language Mode
-Powershell.exe -ValidationLvl Path -LanguageMode ConstrainedLanguage
-```
-
----
-
-### Scheduled Background Tasks Verification
-
-Run these commands in an elevated PowerShell console (run as Administrator) to verify that the registered tasks are working:
-
-#### Task 1: SpoolerWatchdog Verification
-This task detects if the Print Spooler service stops and restarts it automatically:
-```powershell
-# 1. Stop the spooler service manually
-Stop-Service spooler -Force
-
-# 2. Trigger the watchdog task immediately
-Start-ScheduledTask -TaskName "SpoolerWatchdog"
-
-# 3. Check the service status (should be "Running")
-Get-Service spooler
-```
-
-#### Task 2: PrinterFixPostUpdate Verification
-This task automatically re-applies critical registry configurations immediately on system startup:
-```powershell
-# 1. Temporarily write a test value (0) to a sharing registry key
-Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Print" -Name "RpcOverNamedPipes" -Value 0
-
-# 2. Trigger the startup reapply task immediately
-Start-ScheduledTask -TaskName "PrinterFixPostUpdate"
-
-# 3. Check the registry value again (should be restored to "1")
-Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Print" -Name "RpcOverNamedPipes"
-```
-
-#### Task 3: PrinterFixDaily Verification
-This task daily re-applies critical registry configurations to prevent Windows Update from reverting changes:
-```powershell
-# 1. Temporarily write a test value (0) to a sharing registry key
-Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Print" -Name "RpcOverNamedPipes" -Value 0
-
-# 2. Trigger the daily reapply task immediately
-Start-ScheduledTask -TaskName "PrinterFixDaily"
-
-# 3. Check the registry value again (should be restored to "1")
-Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Print" -Name "RpcOverNamedPipes"
-```
-
----
-
-## Important Notes
-- **Elevation Required**: This utility **must be executed as an Administrator** to modify registry keys and manage Windows subsystem services.
-- **Backup Mandatory**: Always execute a **Registry Backup (Option `[64]`)** before running any automated fixes.
-- **Reboot Required**: A system reboot is strictly necessary to commit registry changes and restart network stacks.
-- **Air-Gapped Support**: This tool operates **100% offline**, requiring zero internet connectivity.
-
----
-
-## Contributing
-
-Contributions, issues, and feature requests are welcome! Please review [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines.
-
----
-
-## License
-
-This project is open-source and free to use under the [GPL-3.0 License](LICENSE).
-Feel free to modify and distribute, but please ensure credit is attributed to the original author.
-
----
-
-## Author
-
-**@khairudinfahmi** — 2026
+此版本为完整汉化版，翻译了所有用户界面字符串、菜单项、帮助文本、文档和提示信息。

@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-CN" class="scroll-smooth antialiased">
+<html lang="en" class="scroll-smooth antialiased">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>完整文档 - Windows 打印机共享修复工具</title>
+    <title>COMPLETE DOCUMENTATION - Windows Printer Sharing Fix</title>
 
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -108,7 +108,7 @@
     <script>
         window.__FEATURES_DATA__ = [
             {
-                category: "第一部分：核心修复与网络服务",
+                category: "PART 1: CORE FIXES & NETWORK SERVICES",
                 items: [
                     { id: "01", title: "Patch Error 0x0000011b (RpcAuthnLevelPrivacy)", problem: "Failed to connect to shared printer, throwing error 0x0000011b.", solution: "Disables the RpcAuthnLevelPrivacyEnabled registry key.", whenToUse: "Most common error following Windows 10/11 cumulative updates." },
                     { id: "02", title: "Deep Fix 0x00000709 (Multi-Layer RPC & Kerberos)", problem: "Persistent 0x00000709 errors that block printer installation even after standard fixes.", solution: "Applies multi-layered RPC protocols, disables Kerberos for RPC, and sanitizes HKCU device keys.", whenToUse: "When standard fixes fail on Windows 11 (22H2, 23H2, 24H2+). MUST run on both Host and Client." },
@@ -143,7 +143,7 @@
                 ]
             },
             {
-                category: "第二部分：后台处理程序、驱动与策略",
+                category: "PART 2: SPOOLER, DRIVERS & POLICIES",
                 items: [
                     { id: "31", title: "Hard Reset Print Spooler (Purge Stuck Queue)", problem: "Print queue is completely frozen, spooler hangs.", solution: "Stops spooler, forcefully deletes queue files, restarts spooler.", whenToUse: "Documents stuck in queue that cannot be cancelled manually." },
                     { id: "32", title: "Re-initialize RPC & DCOM Services", problem: "RPC or DCOM services terminated/crashed.", solution: "Verifies and restarts RpcSs and DcomLaunch services.", whenToUse: "'RPC server is unavailable' error." },
@@ -177,7 +177,7 @@
                 ]
             },
             {
-                category: "第三部分：诊断与自动化",
+                category: "PART 3: DIAGNOSTICS & AUTOMATION",
                 items: [
                     { id: "60", title: "Inject Windows Credentials into Vault Permanently", problem: "Continuous prompt for password during share access.", solution: "Injects username/password directly into Windows Credential Manager.", whenToUse: "To bypass manual authentication upon each access." },
                     { id: "61", title: "Purge Stale Credentials from Windows Vault", problem: "Cached legacy logins causing authentication conflicts.", solution: "Purges invalid or outdated credentials from the vault via cmdkey.", whenToUse: "Host password was changed but local machine retains stale cache." },
@@ -263,7 +263,7 @@
                     <div class="hidden md:flex relative group">
                         <i data-lucide="search"
                             class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 transition-colors group-focus-within:text-brand-500"></i>
-                        <input type="text" id="searchInput" placeholder="搜索功能（例如 0x0000011b、NTLM）..."
+                        <input type="text" id="searchInput" placeholder="Search features (e.g. 0x0000011b, NTLM)..."
                             class="w-80 pl-10 pr-4 py-2.5 bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-full text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent outline-none transition-all dark:text-white placeholder-slate-400 shadow-inner">
                     </div>
 
@@ -289,7 +289,7 @@
                     <div class="relative">
                         <i data-lucide="search"
                             class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
-                        <input type="text" id="mobileSearchInput" placeholder="搜索功能..."
+                        <input type="text" id="mobileSearchInput" placeholder="Search features..."
                             class="w-full pl-9 pr-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 outline-none dark:text-white placeholder-slate-400 shadow-inner">
                     </div>
                 </div>
@@ -307,7 +307,7 @@
             <div
                 class="sticky top-28 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm overflow-y-auto max-h-[calc(100vh-8rem)]">
                 <h3 class="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-5 px-3">
-                    文档导航</h3>
+                    Documentation Nav</h3>
                 <nav class="space-y-2 text-sm font-medium">
                     <a href="#introduction"
                         class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-slate-700/50 dark:hover:text-white transition-all group">
@@ -623,7 +623,7 @@
                             </h3>
                             <p
                                 class="text-xs text-brand-600 dark:text-brand-400 font-bold mb-6 tracking-widest uppercase bg-brand-50 dark:bg-brand-900/30 inline-block px-2.5 py-1 rounded">
-                                通用推荐</p>
+                                General Purpose</p>
                             <ol class="space-y-4 text-sm text-slate-600 dark:text-slate-300">
                                 <li class="flex items-start gap-3"><span
                                         class="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-bold shrink-0 text-xs">1</span>
@@ -653,10 +653,10 @@
                             <i data-lucide="shield-check" class="w-40 h-40 text-purple-500"></i>
                         </div>
                         <div class="relative z-10">
-                            <h3 class="font-extrabold text-xl text-slate-900 dark:text-white mb-2">Win 11 定制</h3>
+                            <h3 class="font-extrabold text-xl text-slate-900 dark:text-white mb-2">Win 11 Custom</h3>
                             <p
                                 class="text-xs text-purple-600 dark:text-purple-400 font-bold mb-6 tracking-widest uppercase bg-purple-50 dark:bg-purple-900/30 inline-block px-2.5 py-1 rounded">
-                                Build 26000+ 专用</p>
+                                Build 26000+ Specific</p>
                             <ol class="space-y-4 text-sm text-slate-600 dark:text-slate-300">
                                 <li class="flex items-start gap-3"><span
                                         class="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-bold shrink-0 text-xs">1</span>
@@ -682,10 +682,10 @@
                             <i data-lucide="flame" class="w-40 h-40 text-rose-500"></i>
                         </div>
                         <div class="relative z-10">
-                            <h3 class="font-extrabold text-xl text-slate-900 dark:text-white mb-2">紧急静默全部修复</h3>
+                            <h3 class="font-extrabold text-xl text-slate-900 dark:text-white mb-2">Emergency Silent AllFix</h3>
                             <p
                                 class="text-xs text-rose-600 dark:text-rose-400 font-bold mb-6 tracking-widest uppercase bg-rose-50 dark:bg-rose-900/30 inline-block px-2.5 py-1 rounded">
-                                无人值守执行</p>
+                                Unattended Execution</p>
                             <ol class="space-y-4 text-sm text-slate-600 dark:text-slate-300">
                                 <li class="flex items-start gap-3"><span
                                         class="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-bold shrink-0 text-xs">1</span>
@@ -810,7 +810,7 @@
                                 class="font-extrabold text-indigo-900 dark:text-indigo-300 text-left text-[1.1rem] flex items-center gap-3">
                                 <i data-lucide="alert-octagon"
                                     class="w-5 h-5 shrink-0 text-indigo-600 dark:text-indigo-400"></i>
-                                打印机共享完全被阻止？出现「检查打印机名称」错误？
+                                Printer sharing completely blocked? "Check Printer Name" Error?
                             </span>
                             <div
                                 class="bg-indigo-100 dark:bg-indigo-800/50 p-1.5 rounded-full shrink-0 ml-4 border border-indigo-200 dark:border-indigo-700/50">
@@ -899,7 +899,7 @@
                             <div>
                                 <h2
                                     class="text-3xl md:text-4xl lg:text-5xl font-extrabold text-white tracking-tight mb-2">
-                                    深度分析：PrintNightmare</h2>
+                                    Deep Analysis: PrintNightmare</h2>
                                 <p class="text-brand-400 font-bold tracking-widest uppercase text-sm">Windows 11
                                     Security Architecture (2026 Edition)</p>
                             </div>
@@ -1024,7 +1024,7 @@
                                         <div
                                             class="p-6 bg-gradient-to-r from-rose-900/40 to-rose-800/40 border border-rose-500/30 rounded-2xl text-rose-100 text-center font-bold text-xl mt-6 shadow-inner">
                                             <i data-lucide="zap" class="w-5 h-5 inline mr-2 mb-1 text-rose-400"></i>
-                                            始终在「两台」机器上执行 [84] 全部修复！
+                                            Always execute [84] ALLFIX on BOTH machines!
                                         </div>
                                     </div>
                                 </div>
@@ -1045,7 +1045,7 @@
                 <div class="bg-slate-100 dark:bg-slate-800 p-2 rounded-lg">
                     <i data-lucide="shield-check" class="w-5 h-5 text-brand-500"></i>
                 </div>
-                <span>Windows 打印机共享修复工具</span>
+                <span>Windows Printer Sharing Fix</span>
             </div>
             <div class="text-slate-500 dark:text-slate-400 text-sm font-medium">
                 Author:

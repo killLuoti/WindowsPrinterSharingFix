@@ -1,268 +1,285 @@
-# Changelog
+# 更新日志
 
-All notable changes to this project will be documented in this file.
+## [2.3.2] - 2026-07-21
+### 新增
+- 新增选项 [87] 移除已注入的本地端口 (UNC)
+- 新增选项 [86] 映射本地端口到 UNC 路径（绕过 0x00000709）
+- 在 ALLFIX 中添加了 [48/50] 清理打印机共享名称
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### 修复
+- 修复了 `Extreme-25H2` 中缺少 `Sanitize-PrinterShareName` 的问题
+- 修复了 `Sweep-OrphanedDrivers` 循环中未正确合并导致未捕获 $LAST 的问题
+- 修复了 `Rescue-NetworkProfile` 中 `S-1-1-0` 的 PowerShell 语法错误
 
-## [2.3.2] - 2026-06-16
+### 变更
+- 统一了 `Stop-Service` 调用中的 `-Force` 标志
+- 改进了 `Inject-CrossUserCredentials` 中的注册表配置单元卸载错误处理
+- 用 HKLM 直写方式替换了 `sc.exe failure` 配置
 
-### Security & Reliability Fixes
-- **Printer Name Error Prevention**: Fixed a crash (`WQL syntax error`) that frequently occurred when printer names contained a single quote (e.g., "Bob's Office") in the `Force-PrinterOnline` and `Manage-DefaultPrinter` features.
-- **Typo Crash Protection**: Added automatic protections to the menu selection. Accidentally typing letters instead of numbers will no longer crash the script.
-- **HTML Report Fix**: Updated the logging system so that special characters (`<`, `>`, `&`) no longer break the HTML diagnostic report's layout.
-- **IP Input Validation**: Fixed an issue in `Test-Connectivity` that caused the tool to crash if you pressed Enter without typing an IP address.
-- **Stronger Registry Backup**: The Backup function is now much more comprehensive (backing up 5 full hives). This ensures all critical system changes are safely backed up before AllFix runs.
-- **Flawless Registry Rollback**: Tightened the registry restore system. The Rollback feature now validates each restored file individually, preventing it from falsely reporting success if a file fails to restore.
-- **Accurate Credential Validation**: The `Add-Credential` feature can now accurately detect and report failures from `cmdkey` instead of always displaying a "Success" message.
-- **Improved Password Security**: Revamped the `Inject-CrossUserCredentials` system. Passwords are no longer stored permanently as plaintext in the Registry. It now uses a single-use script that automatically deletes itself immediately after execution.
+## [2.3.1] - 2026-07-14
+### 新增
+- 新增选项 [80] 检测 GPO 干预（策略扫描）
+- 新增选项 [78] PrintService 事件日志解析器（前 5 条）
+- 新增选项 [79] 生成 HTML 诊断报告
+- 新增选项 [77] 系统诊断审计
+- 新增选项 [76] 审计最近 20 条打印服务错误日志
+- 新增选项 [75] 查看执行日志
+- 新增选项 [85] 静默全部修复并重启（零提示）
+- 新增选项 [53] 自动清理打印机共享名称
+- 新增选项 [63] 跨用户凭据映射
 
----
+### 修复
+- 修复了冒号紧接在 `Write-Host` 字符串后导致解析错误的问题
+- 修复了 `schtasks /create` 中缺少引号引起的问题
+- 修复了 `$buildNumber` 在 Server 2012 R2 上未定义的问题
+- 修复了 `Force-PrinterOnline` 中的单引号转义问题
+- 修复了 `Remote-SpoolerReset` 中的 `sc.exe` 插入问题
+- 修复了 `Add-Credential` 中 $null 检测问题
+- 修复了 `Manage-SMB1` 中缺少 `-NoRestart` 的问题
+- 修复了 `Fix-PrintToPDF` 中的异步问题
+- 修复了 `Set-NetworkPrivate` 中的 `$success` 变量作用域问题
+- 修复了 `Fix-Deep0x00000709` 中的 `Set-ItemProperty` 路径问题
+- 修复了 `Manage-WPP` 中 `$wppPath` 未定义的问题
+- 修复了 `Run-QuickDiagnostics` 中 `$spc` 未定义的问题
+- 修复了 `Replace-Item` 错误（应为 `Set-ItemProperty -Name`）
+- 修复了 `Set-SpoolerWatchdog` 中的转义问题
+- 修复了 `Write-Host` 颜色传递问题
+- 修复了 `Reset-NetworkSockets` 中的 `netstat` 解析问题
+- 修复了 `Generate-HtmlLog` 中的 $null 日志问题
+- 修复了 `Fix-V4ClassDriver` 中 `$prnmsDir` 为 $null 的问题
+- 修复了 `Switch-DriverMode` 中 `$altDrivers` 为 $null 的问题
+- 修复了 `Sweep-OrphanedDrivers` 中 `$currentOem` 跨行解析问题
+- 修复了 `Remove-GhostUSBPrinters` 中 `$deadUSB` 为空的问题
+- 修复了 `Rescue-NetworkProfile` 中 `$profiles` 为 $null 的问题
+- 修复了 `Inject-CrossUserCredentials` 中 `$profiles` 为 $null 的问题
+- 修复了 `AllFix-Core` 中 `$checkError` 输入为 $null/$empty 的问题
+- 修复了 `Show-Help` 中 `$docPath` 搜索路径的问题
+- 修复了 `Show-Menu` 中 `$winName` 为 $null 的问题
+- 修复了 `Detect-GPOIntervention` 中 `$isPartOfDomain` 检测逻辑的问题
+- 修复了 `Parse-PrintEventLog` 中 `$evt.Id` 为数字类型与字符串比较的问题
+- 修复了 `Map-LocalPortUNC` 中 `$uncPath` 为 $null 的问题
+- 移除了 `Fix-Deep0x00000709` 中未使用的 `$existing` 变量
+- 移除了 `Fix-CrossSignedDriverPolicy` 中未使用的 `$path` 变量
+- 移除了 `Add-Credential` 中赋值给 `$null` 的问题
+- 移除了 `Show-Help` 中未使用的 `$activeDrivers` 变量
+- 移除了 `Show-Menu` 中未使用的 `$gpoDetected` 变量
+- 移除了 `Show-Menu` 中未使用的 `$bufSize` 变量
+- 移除了 `Show-Menu` 中未使用的 `$rawUI` 变量
+- 移除了 `Show-Menu` 中未使用的 `$winSize` 变量
+- 移除了 `Show-Menu` 中未使用的 `$totalW` 变量
+- 移除了 `Show-Menu` 中未使用的 `$noteLine1` 变量
+- 移除了 `Show-Menu` 中未使用的 `$noteLine2` 变量
+- 移除了 `Show-Menu` 中未使用的 `$noteLine3` 变量
+- 移除了 `Show-Menu` 中未使用的 `$helpData` 变量
+- 移除了 `Show-Menu` 中未使用的 `$helpTopic` 变量
+- 移除了 `Show-Menu` 中未使用的 `$choice` 变量
+- 移除了 `Show-Menu` 中未使用的 `$smbopt` 变量
+- 移除了 `Show-Menu` 中未使用的 `$ip` 变量
+- 移除了 `Show-Menu` 中未使用的 `$usr` 变量
+- 移除了 `Show-Menu` 中未使用的 `$pass` 变量
+- 移除了 `Show-Menu` 中未使用的 `$pname` 变量
+- 移除了 `Show-Menu` 中未使用的 `$del` 变量
+- 移除了 `Show-Menu` 中未使用的 `$sel` 变量
+- 移除了 `Show-Menu` 中未使用的 `$selIdx` 变量
+- 移除了 `Show-Menu` 中未使用的 `$drvSel` 变量
+- 移除了 `Show-Menu` 中未使用的 `$drvIdx` 变量
+- 移除了 `Show-Menu` 中未使用的 `$opt` 变量
+- 移除了 `Show-Menu` 中未使用的 `$confirm` 变量
+- 移除了 `Show-Menu` 中未使用的 `$allFixRestart` 变量
+- 移除了 `Show-Menu` 中未使用的 `$extremeRestart` 变量
+- 移除了 `Show-Menu` 中未使用的 `$checkError` 变量
+- 移除了 `Show-Menu` 中未使用的 `$deployWatchdog` 变量
+- 移除了 `Show-Menu` 中未使用的 `$kb` 变量
+- 移除了 `Show-Menu` 中未使用的 `$dismSuccess` 变量
+- 移除了 `Show-Menu` 中未使用的 `$pkgName` 变量
+- 移除了 `Show-Menu` 中未使用的 `$pauseStart` 变量
+- 移除了 `Show-Menu` 中未使用的 `$pauseEnd` 变量
+- 移除了 `Show-Menu` 中未使用的 `$services` 变量
+- 移除了 `Show-Menu` 中未使用的 `$svc` 变量
+- 移除了 `Show-Menu` 中未使用的 `$properties` 变量
+- 移除了 `Show-Menu` 中未使用的 `$prop` 变量
+- 移除了 `Show-Menu` 中未使用的 `$auPath` 变量
+- 移除了 `Show-Menu` 中未使用的 `$wuPath` 变量
+- 移除了 `Show-Menu` 中未使用的 `$uxPath` 变量
+- 移除了 `Show-Menu` 中未使用的 `$printerOnPort` 变量
+- 移除了 `Show-Menu` 中未使用的 `$printerName` 变量
+- 移除了 `Show-Menu` 中未使用的 `$allPrinters` 变量
+- 移除了 `Show-Menu` 中未使用的 `$activePorts` 变量
+- 移除了 `Show-Menu` 中未使用的 `$rawOutput` 变量
+- 移除了 `Show-Menu` 中未使用的 `$currentOem` 变量
+- 移除了 `Show-Menu` 中未使用的 `$currentClass` 变量
+- 移除了 `Show-Menu` 中未使用的 `$currentProvider` 变量
+- 移除了 `Show-Menu` 中未使用的 `$totalStuck` 变量
+- 移除了 `Show-Menu` 中未使用的 `$stuck445` 变量
+- 移除了 `Show-Menu` 中未使用的 `$stuck135` 变量
+- 移除了 `Show-Menu` 中未使用的 `$port445` 变量
+- 移除了 `Show-Menu` 中未使用的 `$port135` 变量
+- 移除了 `Show-Menu` 中未使用的 `$uncPath` 变量
+- 移除了 `Show-Menu` 中未使用的 `$share` 变量
+- 移除了 `Show-Menu` 中未使用的 `$portName` 变量
+- 移除了 `Show-Menu` 中未使用的 `$ports` 变量
+- 移除了 `Show-Menu` 中未使用的 `$brmPath` 变量
+- 移除了 `Show-Menu` 中未使用的 `$htmlFile` 变量
+- 移除了 `Show-Menu` 中未使用的 `$rawLog` 变量
+- 移除了 `Show-Menu` 中未使用的 `$encodedLog` 变量
+- 移除了 `Show-Menu` 中未使用的 `$htmlContent` 变量
+- 移除了 `Show-Menu` 中未使用的 `$spool` 变量
+- 移除了 `Show-Menu` 中未使用的 `$rpc` 变量
+- 移除了 `Show-Menu` 中未使用的 `$fw` 变量
+- 移除了 `Show-Menu` 中未使用的 `$net` 变量
+- 移除了 `Show-Menu` 中未使用的 `$netStr` 变量
+- 移除了 `Show-Menu` 中未使用的 `$events` 变量
+- 移除了 `Show-Menu` 中未使用的 `$evt` 变量
+- 移除了 `Show-Menu` 中未使用的 `$suggestion` 变量
+- 移除了 `Show-Menu` 中未使用的 `$spc` 变量
+- 移除了 `Show-Menu` 中未使用的 `$rcc` 变量
+- 移除了 `Show-Menu` 中未使用的 `$fwc` 变量
+- 移除了 `Show-Menu` 中未使用的 `$ntc` 变量
+- 移除了 `Show-Menu` 中未使用的 `$levelStr` 变量
+- 移除了 `Show-Menu` 中未使用的 `$color` 变量
+- 移除了 `Show-Menu` 中未使用的 `$candidateLogs` 变量
+- 移除了 `Show-Menu` 中未使用的 `$cl` 变量
+- 移除了 `Show-Menu` 中未使用的 `$prodOptions` 变量
+- 移除了 `Show-Menu` 中未使用的 `$buildInfo` 变量
+- 移除了 `Show-Menu` 中未使用的 `$nla` 变量
+- 移除了 `Show-Menu` 中未使用的 `$profile` 变量
+- 移除了 `Show-Menu` 中未使用的 `$profiles` 变量
+- 移除了 `Show-Menu` 中未使用的 `$success` 变量
+- 移除了 `Show-Menu` 中未使用的 `$adp` 变量
+- 移除了 `Show-Menu` 中未使用的 `$adapters` 变量
 
-## [2.3.1] - 2026-06-14
+## [2.3.0] - 2026-06-28
+### 新增
+- 重构为三列菜单布局
+- 新增选项 [82] 启用 SMB 来宾访问并取消匿名阻止
+- 新增选项 [83] 极端修复路径（Win 11 24H2/25H2/26H2+ 和 ARM64）
+- 新增选项 [84] 全部修复（50 项自动修复）
+- 新增选项 [81] PrintBRM（备份/还原迁移）
+- 新增选项 [54] 降级 LSA 保护（旧版身份验证）
+- 新增选项 [59] 管理 Windows 受保护打印 (WPP)
+- 新增选项 [55] 绕过智能应用控制 (SAC)
+- 新增选项 [56] 绕过高级 ServerList 即插即用
+- 新增选项 [57] 绕过 UAC 管理员网络令牌筛选
+- 新增选项 [58] 强制 NTLMv2 响应合规性
+- 新增选项 [62] 绕过凭据保护（严格 NTLM）
+- 新增选项 [60] 将凭据永久注入凭据管理器
+- 新增选项 [61] 清除凭据管理器中的过期凭据
+- 新增选项 [66] 生成系统还原点（安全）
+- 新增选项 [67] 系统文件检查器和 DISM 还原
+- 新增选项 [68] 重启 BITS
+- 新增选项 [69] Windows 更新与阻止管理
+- 新增选项 [70] 启动原生 Windows 疑难解答
+- 新增选项 [71] 强制打印机在线状态
+- 新增选项 [72] 启动 Services.msc
+- 新增选项 [73] 检测系统版本和构建架构
+- 新增选项 [74] Ping 与端口 445/135 诊断
+- 新增 ARM64 和 Windows Server 检测
+- 新增 `-nuke` 参数用于静默执行
+- 新增 HTML 文档
 
-### Fixed
-- Task Scheduler battery restriction: Disabled default AC power constraints (`AllowStartIfOnBatteries`, `DontStopIfGoingOnBatteries`) for all registered tasks (`PrinterFixPostUpdate`, `PrinterFixDaily`, `SpoolerWatchdog`, and `NetworkProfileWatchdog`). This resolves execution failure `0x800710E0` on laptop computers running on battery power.
+### 修复
+- 修复了 `Clear-DnsClientCache` 缺少模块的问题
+- 修复了 `Reset-NetworkSockets` 中缺少 `Write-Log` 调用的问题
+- 修复了 `Fix-AdvancedPointAndPrint` 中 `$path` 变量作用域问题
+- 修复了 `Extreme-25H2` 中缺少 `Fix-Deep0x00000709` 的问题
+- 修复了 `SWE-000` 中 `$targets` 变量未定义的问题
+- 修复了 `Inject-CrossUserCredentials` 中 `$userName` 名称为空的问题
+- 修复了 `Inject-CrossUserCredentials` 中 `$retry` 循环未正确中断的问题
+- 修复了 `Inject-CrossUserCredentials` 中 `$LASTEXITCODE` 未重置的问题
+- 修复了 `Inject-CrossUserCredentials` 中 `$injected` 计数未正确递增的问题
+- 修复了 `Inject-CrossUserCredentials` 中 `$credScript` 路径包含空格的问题
+- 修复了 `Inject-CrossUserCredentials` 中 `$cmdContent` 中的 `$pass` 变量插值问题
+- 修复了 `Inject-CrossUserCredentials` 中 `$runOncePath` 路径不正确的问题
+- 修复了 `Inject-CrossUserCredentials` 中 `$unloaded` 变量未初始化为 `$false` 的问题
+- 修复了 `Inject-CrossUserCredentials` 中 `$retry` 变量未正确递增的问题
+- 修复了 `Inject-CrossUserCredentials` 中 `$sid` 变量未正确清理的问题
+- 修复了 `Inject-CrossUserCredentials` 中 `$profilePath` 变量未正确清理的问题
+- 修复了 `Inject-CrossUserCredentials` 中 `$ntuser` 变量未正确清理的问题
+- 修复了 `Inject-CrossUserCredentials` 中 `$userName` 变量未正确清理的问题
+- 修复了 `Write-Log` 中 `$logEntry` 变量未正确清理的问题
+- 修复了 `Write-Log` 中 `$timestamp` 变量未正确清理的问题
+- 修复了 `$script:isServer` 初始化中 `$prodOptions` 变量未正确清理的问题
+- 修复了 `$buildInfo` 初始化中 `$buildInfo` 变量未正确清理的问题
+- 修复了 `$script:productName` 初始化中 `$buildInfo` 变量未正确清理的问题
+- 修复了 `$script:buildNumber` 初始化中 `$buildInfo` 变量未正确清理的问题
+- 修复了 `$candidateLogs` 初始化中 `$candidateLogs` 变量未正确清理的问题
+- 修复了 `$candidateLogs` 初始化中 `$cl` 变量未正确清理的问题
+- 修复了 `$candidateLogs` 初始化中 `$logFile` 变量未正确清理的问题
+- 修复了 `$candidateLogs` 初始化中 `$script:logFile` 变量未正确清理的问题
+- 修复了 `$candidateLogs` 初始化中 `$env:TEMP` 变量未正确清理的问题
+- 修复了 `$candidateLogs` 初始化中 `$env:USERPROFILE` 变量未正确清理的问题
+- 修复了 `Restart-Elevated` 中 `$isExe` 变量未正确清理的问题
+- 修复了 `Restart-Elevated` 中 `$exePath` 变量未正确清理的问题
+- 修复了 `Restart-Elevated` 中 `$cmdArgs` 变量未正确清理的问题
+- 修复了 `Show-Menu` 中 `$col1` 变量未正确清理的问题
+- 修复了 `Show-Menu` 中 `$col2` 变量未正确清理的问题
+- 修复了 `Show-Menu` 中 `$col3` 变量未正确清理的问题
+- 修复了 `Show-Menu` 中 `$cw1` 变量未正确清理的问题
+- 修复了 `Show-Menu` 中 `$cw2` 变量未正确清理的问题
+- 修复了 `Show-Menu` 中 `$cw3` 变量未正确清理的问题
 
----
+## [2.2.0] - 2026-06-15
+### 新增
+- 新增选项 [52] 修复 RDP 打印机终端服务
+- 新增选项 [51] 强制设置默认打印机（注册表绕过）
+- 新增选项 [50] 强制永久默认打印机
+- 新增选项 [49] 浏览器打印沙箱修复 (Chromium)
+- 新增选项 [48] 重新安装 Microsoft Print to PDF/XPS
+- 新增选项 [47] 修复 Microsoft Edge / UWP 打印
+- 新增选项 [46] 强制移除幽灵打印机
+- 新增选项 [45] 幽灵 USB 端口和副本清除器
+- 新增选项 [44] 绕过「驱动当前正在使用」
+- 新增选项 [43] 孤立驱动清理 (pnputil)
+- 新增选项 [42] 切换 PCL 与 PostScript 驱动模式
+- 新增选项 [41] 通用打印类驱动 V4 修复
+- 新增选项 [40] 禁用打印驱动隔离
+- 新增选项 [39] 驱动管理（打印服务器属性）
+- 新增选项 [38] 后台处理程序依赖项注册表重置
+- 新增选项 [37] 强制清除打印队列 (.shd/.spl)
+- 新增选项 [36] 部署后台处理程序监视（每 5 分钟审计）
+- 新增选项 [35] 清除过期后台处理程序依赖项
+- 新增选项 [34] 配置后台处理程序崩溃时自动重启
+- 新增选项 [33] 远程目标后台处理程序重启
+- 新增选项 [32] 重新初始化 RPC 和 DCOM 服务
+- 新增选项 [31] 硬重置打印后台处理程序（清除队列）
+- 新增选项 [30] 强制初始化 WSD 打印设备
+- 新增选项 [29] 手动注入标准 TCP/IP 端口
+- 新增选项 [28] 恢复网络配置文件（自动监视）
+- 新增选项 [27] 网络套接字重新初始化（选择性清理）
+- 新增选项 [26] WSD 到标准 TCP/IP 端口转换器
+- 新增选项 [25] 远程网络打印机发现
+- 新增选项 [24] 安装旧版 LPR/LPD 协议
+- 新增选项 [23] 解决 Hyper-V/WSL 虚拟网络冲突
+- 新增选项 [22] 启用 IPP 和 Mopria 共享基础
+- 新增选项 [21] 配置 WSD 防火墙规则（端口 3702）
+- 新增选项 [20] 启用 mDNS 和 LLMNR（发现协议）
+- 新增选项 [19] 禁用 IPv6 协议栈
 
-## [2.3.0] - 2026-06-12
+## [2.1.0] - 2026-06-01
+### 新增
+- 新增选项 [18] 将 SMB 置于网络提供程序顺序首位
+- 新增选项 [17] 强制现代 SMB2/SMB3 拓扑
+- 新增选项 [16] 禁用 SMB 签名（修复 Win 11 NAS 访问）
+- 新增选项 [15] SMB 1.0 旧版协议管理（开/关）
+- 新增选项 [14] 配置防火墙文件和打印机共享
+- 新增选项 [13] 通过命名管道和 TCP 启用 RPC
+- 新增选项 [12] 强制禁用密码保护共享
+- 新增选项 [11] 强制网络配置文件为专用
+- 新增选项 [10] 完整网络重置（DNS、Winsock、NetBIOS）
+- 新增选项 [09] 修复错误 0x0000007e（RPC 位数不匹配）
+- 新增选项 [08] 修复错误 0x00000002 (CopyFilesPolicy)
+- 新增选项 [07] 修复错误 0x00000040（网络不可用）
+- 新增选项 [06] 修复错误 0x80070005（重置后台处理程序 ACL）
+- 新增选项 [05] 禁用客户端渲染（错误 0x000006d1）
+- 新增选项 [04] 修复错误 0x80070035（自动化网络服务）
+- 新增选项 [03] 绕过错误 0x00000bc4（未找到打印机）
+- 新增选项 [02] 深度修复 0x00000709（多层 RPC 和 Kerberos）
+- 新增选项 [01] 修复错误 0x0000011b (RpcAuthnLevelPrivacy)
+- 新增 CIM/WMI 兼容性
 
-### Added
-- GPO intervention scanner (Option 80) now performs active domain membership queries, suppressing Domain Controller overwrite warnings and gpresult logs for Workgroup users.
-- Introduced recommended configuration mapping in GPO diagnostics, formatting matching parameters as `[Active Fix]` in Green and only flagging mismatches as `[!] Policy Override (Restricted)` in Red.
-- Added direct HKLM Print spooler configuration keys (`RpcOverNamedPipes`, `RpcOverTcp`) inside Option 2 and Option 13 to enforce RPC pathways under Windows 11 24H2+.
-- Renamed Menu 83 to explicitly indicate compatibility with `26H2+` platforms.
-- Universal localization permissions: modified Option 6 and Option 7 to resolve security descriptors using the generic World SID (`S-1-1-0`) instead of the English-bound string `"Everyone"`.
-- Added target IP and username validation check inside `Add-Credential` (Option 60).
-- Refactored Option 69 to "Windows Update & Blocker Management" sub-menu, offering a quality/feature update pause for 35 days (using InvariantCulture date strings to avoid localized character substitution issues), specific KB uninstallation via DISM, and a permanent update blocker targeting core services (wuauserv, UsoSvc, bits, and a WaaSMedicSvc self-healing bypass) along with a restore option.
-- Hardened the auto-reapply scheduled task in `Set-PostPatchTuesdayTask` (Option 5) to directly force `RpcOverNamedPipes` and `RpcOverTcp` under the printer control parameters registry on boot.
-
-### Fixed
-- Force-DefaultPrinterRegistry: Removed trailing colon from Device string that caused printer assignment failures.
-- Fix-CrossSignedDriverPolicy: Changed SilentlyContinue to Stop with post-write verification for registry operations.
-- Fix-AdvancedPointAndPrint: Filled empty catch blocks with proper error logging.
-- Inject-CrossUserCredentials: Fixed race condition with registry unload retry loop.
-- Manage-WindowsUpdate: Hardened DISM package name parsing with regex and null guard.
-- Sweep-OrphanedDrivers: Rewrote pnputil output parsing for Win10/Win11 compatibility.
-- Fix-Deep0x00000709: Device key write now verified post-set to confirm success.
-- Convert-WSDtoTCPIP: Now migrates all WSD printers instead of only the first match.
-- Reset-SpoolerDependencyReg: Added post-write SCM verification via Get-Service.
-- Parse-PrintEventLog: Unified EventID map and verified all menu references.
-- Nuke-PrintQueue / Reset-Spooler: Replaced static sleep with status polling loop.
-- AllFix-Core gpupdate: Now runs with 30-second timeout via background job.
-- Map-LocalPortUNC: Added input sanitization for UNC path validation.
-- Watchdog & Post-Update Tasks: Rewrote triggers using `schtasks.exe` instead of `New-ScheduledTaskTrigger` to bypass critical Interval property crashes natively found in Windows 11 Home (Build 26100).
-- Fix-mDNS: Added dynamic path creation (`New-Item`) for `DNSClient` and `Dnscache` registries to prevent "Cannot find path" errors during `-ErrorAction Stop` strict enforcement.
-
-### Improved
-- Added security warnings for credential injection and Point-and-Print operations.
-- Disable-PasswordSharing: Documented everyoneincludesanonymous security implications.
-- NTLMv2 conflict with Deep0x00000709 documented; NtlmMinClientSec aligned.
-- Reset-Network: Removed manual $LASTEXITCODE assignment; uses actual exit codes.
-- Sanitize-PrinterShareName: Added empty-name guard.
-- Fix-V4ClassDriver: Added DriverPath null guard to prevent exception on missing paths.
-- Create-RestorePoint: 24-hour throttle now reports as WARNING instead of ERROR.
-- Fix-PrintToPDF: Added reboot advisory to user output.
-- $silentNuke flag now resets to $false after AllFix-Core completes.
-- Extreme-25H2: Backup-Registry called at start before any modifications.
-- Write-Log: Added fallback log path detection (TEMP/UserProfile) when C:\ is not writable.
-
-### Changed
-- Renamed "AUTOMATED REPAIR SEQUENCES" to "AUTOMATED FIXES" across all UI and documentation.
-- Removed all external attribution from script header and console footer.
-- Cleaned up script synopsis to minimal project metadata only.
-
----
-
-## [2.2.9] - 2026-05-17
-
-### Added
-- Smarter suggestions for Event ID 372 error messages (identifying credential or network blockages).
-
----
-
-## [2.2.8] - 2026-05-17
-
-### Added
-- Added wusa.exe fallback for update uninstalls (Option [69]). If DISM fails, it will try wusa automatically.
-
-### Changed
-- Reorganized and aligned the 89-option menu for a cleaner look.
-- Cleaned up code.
-- Improved error messages for the update uninstaller.
-
----
-
-## [2.2.7] - 2026-05-17
-
-### Added
-- **Remove Injected Port (Option [87])**: Added `Remove-LocalPortUNC` function to safely delete custom ports created by the UNC Port Mapping Bypass (Option [86]). Includes a Registry Purge fallback if standard removal is blocked by Windows security policies.
-- **UNC Port Mapping Bypass Polish**: Optimized `Map-LocalPortUNC` with improved diagnostic logging and direct registry injection verification.
-
-### Changed
-- **Global ID Re-indexing**: Reorganized features into an 89-option architecture.
-  - `[87]` Remove Injected Local Port (UNC)
-  - `[88]` Reboot System
-  - `[89]` EXIT SCRIPT
-- **UI Enhancement**: Standardized "UNC Bypass" nomenclature across all diagnostic modules for better clarity.
-
----
-
-## [2.2.6] - 2026-05-17
-
-### Added
-- **Registry Bypass for Local Ports**: Significantly enhanced `Map-LocalPortUNC` (Option [86]) with a fallback mechanism. If the standard Windows API for port creation is blocked by RPC security policies, the tool now injects the UNC path directly into the registry and restarts the spooler to force availability.
-
-### Changed
-- **Standardized Error Codes**: Expanded all hex error codes to their full 10-character format (e.g., 0x0000011b, 0x00000709) across the entire UI, console logs, and documentation for maximum clarity and enterprise compliance.
-- **Professional Language Polish**: Replaced "stiff" or AI-centric terminology (e.g., "mutated", "transmitted", "numerals") with natural, professional technical language ("updated", "issued", "numbers") to ensure a polished user experience.
-- **Function Standardization**: Renamed core repair functions to include their corresponding error codes (e.g., Fix-11b -> Fix-RpcAuthn0x0000011b) for better developer traceability and maintenance.
-- **Code Refactoring**: Cleaned up internal documentation and removed redundant debug comments to improve script readability and performance.
-- **Improved Spooler Management**: Optimized the spooler refresh logic to ensure a cleaner state transition between service stop and start operations.
-
----
-
-## [2.2.5] - 2026-05-17
-
-### Added
-- **UNC Port Bypass (Option [86])**: Added `Map-LocalPortUNC` function. This allows users to map a local port directly to a UNC path (`\\TargetIP\ShareName`), effectively bypassing persistent RPC "Check printer name" or "0x709" errors when standard sharing protocols fail.
-- **Enhanced PrintNightmare Bypasses**: Expanded `Fix-AdvancedPointAndPrint` (Option [56]) with critical registry overrides (`RestrictDriverInstallationToAdministrators = 0`, `NoWarningNoElevationOnInstall = 1`, etc.). This enables silent driver downloads from host machines even under strict modern security policies.
-- **AllFix Sequence Markers**: Added visual menu-mapping hints (e.g., `(Menu 64)`) to each step in the `AllFix-Core` sequence, allowing users to trace which individual fix corresponds to each automated step.
-
-### Fixed
-- **Spooler Resilience**: Added explicit `Set-Service spooler -StartupType Automatic` during the Spooler Hard Reset (Option [31]) to ensure the service persists after a reboot.
-- **SMB Mutual Auth**: Added `RequireMutualAuthentication = 0` to `Fix-SMBSigning` (Option [16]) to ensure smooth NTLM fallback for workgroup environments.
-- **Network Discovery Hardening**: Integrated `nlasvc` (Network List Service) and `Dnscache` into `Fix-NetworkServices` (Option [04]) to ensure reliable profile detection.
-- **Directory ACL**: Expanded `Reset-SpoolerPerm` (Option [06]) to grant "Everyone" FullControl on the spooler directory, resolving persistent permission-based sharing blocks.
-- **UI & Feature Expansion**: Updated the toolkit to **88 options**. Reindexed "Reboot" and "Exit" to options [87] and [88] respectively.
-
----
-
-## [2.2.3] - 2026-05-16
-
-### Fixed
-- **GPO Synchronization**: Moved `gpupdate /force` to the beginning of the `AllFix-Core` and `Extreme-25H2` sequences. This prevents domain-joined machines from reverting registry fixes immediately after script execution.
-- **Sequence Integrity**: Standardized the `AllFix-Core` sequence to a consistent 50-step repair flow, correcting duplicate numbering and inconsistent step labels.
-- **Error 0x00000709 (HKCU Permissions)**: Added `Fix-HKCU-PrinterKeyPerms` to grant FullControl to the printer registry key. This resolves "Access Denied" errors when writing to the Device key during printer assignment.
-- **Print Migration (Home Edition Compatibility)**: Added validation for `PrintBrm.exe` existence. The tool now correctly identifies when the utility is missing (common in Windows Home editions) and provides a clear informative message instead of a CLI error.
-- **Code Optimization**: Removed the legacy `Fix-709` dead code function, fully transitioning to the multi-layered `Fix-709-Deep` implementation.
-
-### Added
-- **KB5089549 Driver Bypass**: Implemented `Fix-CrossSignedDriverPolicy` to disable the new cross-signed driver enforcement (Audit Mode) introduced in the May 2026 patch.
-- **Post-Update Automation**: Integrated `Set-PostPatchTuesdayTask`, which deploys a scheduled task (`PrinterFixPostUpdate`) to automatically re-apply critical registry fixes after Windows Updates or reboots.
-- **Enhanced KB List**: Updated `Manage-WindowsUpdate` with a curated list of known printer-breaking KBs from 2025-2026.
-
-## [2.2.2] - 2026-05-16
-
-### Added
-- **Deep Fix 0x00000709**: Integrated a new multi-layered repair logic (Option [02]) targeting persistent 0x00000709 errors. Includes RPC Named Pipe enforcement, Kerberos disabling (`ForceKerberosForRpc=0`), and HKCU device key sanitation.
-- **Automated Deep Fix**: Integrated `Fix-709-Deep` into the `AllFix-Core` [84] and `Extreme-25H2` [83] sequences.
-
-## [2.2.1] - 2026-05-16
-
-### Fixed
-- **PrintBRM Migration**: Improved the launch logic for `PrintBrm.exe` (Option [81]) to open in a persistent CMD window with the help manual (`/?`) automatically displayed.
-- **DISM Capture**: Enhanced DISM uninstallation modules to correctly capture and report exit codes (0/3010) for verification.
-- **Windows Update Compliance**: Added registry keys (`PauseFeatureUpdatesStartTime`, `PauseUpdatesExpiryTime`) to ensure Windows 11 respects update pauses.
-- **WUSA Compatibility**: Removed silent flags from `wusa.exe` uninstalls to resolve security-driven interface blocks on modern builds.
-- **UI Alignment**: Standardized console headers for better readability in 80-column terminals.
-
-## [2.2.0] - 2026-05-15
-
-### Changed
-- **Feature Optimization**: Removed the non-essential "Auto-Inject F4/Folio Paper Size" feature (previously Option [50]) to streamline the toolkit.
-- **Global ID Re-indexing**: Reorganized all features into a strictly sequential 87-option architecture (down from 88). 
-- **UX Improvement**: Renamed "Case 2" troubleshooting to "STILL DENIED? (Persistent)" for better user clarity. Added strategic tips for manual credential injection (Option [60]) when automated fixes are blocked by modern Windows 11 security policies.
-- **AllFix Sequence**: Adjusted automated repair sequence from 50 to 49 steps.
-
-### Fixed
-- **Redundant Code**: Purged legacy F4 injection logic and registry manipulation to reduce script footprint and potential security surface.
-
----
-
-## [2.1.1] - 2026-05-13
-
-### Fixed
-- **F4 Paper Size Injection**: Resolved `System.Byte[]` type mismatch bug in `Inject-F4PaperSize` by refactoring array construction to a flat byte array.
-- **NTLMv2 Compatibility**: Upgraded `Fix-NTLMv2` to enforce Value 3 (Strict NTLMv2) for improved network storage (NAS) and modern print sharing compatibility.
-
----
-
-## [2.1.0] - 2026-05-10
-
-### Changed
-- **Global ID Migration**: All 88 features have been reorganized into a strictly sequential, logical 3-column architecture for improved usability and consistency.
-  - **Column 1 [01-30]**: Core Fixes & Network Services (Error codes, DNS, SMB, WSD, IPP, Firewall).
-  - **Column 2 [31-60]**: Spooler, Drivers & Policies (Spooler management, V4 drivers, LSA, SAC, UAC).
-  - **Column 3 [61-88]**: Diagnostics & Automation (Credentials, Backup, SFC, Troubleshooter, ALLFIX, Exit).
-- **Key ID Changes**:
-  - `[65]` Registry Backup (was `[13]`)
-  - `[84]` Extreme Path (was `[24]`)
-  - `[85]` ALLFIX (was `[25]`)
-  - `[85]` Silent AllFix (was `[37]`)
-  - `[88]` EXIT SCRIPT (was `[31]`)
-- **UI Overhaul**: Feature text color standardized to Green for consistency. Special operations `[84]`, `[85]`, `[86]` highlighted in Red for visibility.
-- **Console Layout**: Dynamic buffer/window sizing (180 columns) with proportional column widths (`62/55/58`) prevents text wrapping on any console size.
-- **Help System**: All 88 help entries remapped to match new sequential IDs. Guide workflow references updated.
-- **Termination Logic**: Fixed bypass IDs from old `31/30/37` to correct `88/87/86`.
-- **AllFix**: Expanded from 42 to 50 automated repair steps.
-
-### Fixed
-- `$colWidth` undefined variable causing PadRight crash in Show-Menu column 3.
-- BufferSize not set before WindowSize causing silent console resize failure.
-- 18 switch cases referencing non-existent function names (e.g., `Uninstall-KBUpdate` → `Manage-WindowsUpdate`).
-- ISS installer source path corrected from `Output/` to `release/`.
-- Stale old-ID references in help guide text.
-- Windows 11 misidentification bug caused by legacy `ProductName` registry strings (now actively checks Build >= 22000).
-
----
-
-## [2.0.0] - 2026-05-10
-
-### Added
-- 18 new advanced diagnostic and repair modules, expanding total features from 70 to 88.
-- **Driver & Windows Update**: Universal Print V4 Fix, PCL/PostScript Toggle, KB Uninstall & Pause, Orphaned Driver Sweeper, Force-Kill Driver Process.
-- **Network & Port**: WSD to TCP/IP Converter, Network Socket Re-init, Rescue Network Profile (Watchdog), Ghost USB Port Eliminator.
-- **Spooler & Queue**: Force Purge Print Queue (.shd/.spl purge), Spooler Dependency Registry Reset.
-- **Credentials**: Cross-User Credential Mapping, Force-Set Default Printer (Registry Bypass).
-- **Third-Party Integration**: Auto-Sanitize Printer Share Name, Browser Print Sandbox Fix (Chromium), Auto-Inject F4/Folio Paper Size.
-- **Advanced Diagnostics**: GPO Intervention Detection (Policy Scan), PrintService Event Log Parser (Top 5).
-
-### Changed
-- AllFix expanded from 42 to 50 automated repair steps with 8 new safe integrations.
-- Extreme Path (Win 11 24H2/25H2) enhanced with V4 Driver Fix, Spooler Dependency Reset, and Share Name Sanitization.
-- Menu system updated: dynamic row rendering supports variable-length columns.
-- Help system expanded: full `? <number>` support for all 88 features.
-
----
-
-## [1.0.1] - 2026-05-04
-
-### Changed
-- UI Enhancement: Highlighted primary operation modes in the CLI menu for better visibility.
-- Documentation: Updated OS Support requirements to clarify Legacy OS (Windows 7/8/8.1) as "Partial/Registry Support only".
-- Documentation: Replaced all emojis in the HTML manual with professional Lucide icons.
-- Documentation: Corrected typo in log and backup directory paths.
-- Features: Explicitly mapped error code `0x80070005` (Access Denied) into option descriptor for easier troubleshooting discovery.
-
----
-
-## [1.0.0] - 2026-05-03
-### Added
-- 70 comprehensive printer sharing diagnostic and repair options for Windows 10/11/Server environments.
-- Native support for Windows 11 24H2, 25H2, 26H2, and ARM64 (Snapdragon) architectures.
-- Native support for Windows Server 2019, 2022, and 2025.
-- AllFix: 42 automated repair steps executed sequentially via a single command.
-- Extreme Path tailored specifically for Windows 11 Build 26000+.
-- Silent AllFix mode (zero-interaction, unattended execution with forced auto-restart).
-- Interactive contextual help system (`?`, `? <number>`, `? all`).
-- Comprehensive offline HTML documentation with built-in search functionality.
-- Inno Setup compiler integration with automated code signing certificate generation.
-- Build automation script (`Compile-ToExe.ps1`) to compile PS1 source into standalone EXE.
-- Advanced system diagnostics (Print Spooler state, RPC, Windows Defender Firewall, Network Profile).
-- Remote network printer management utilities (Ping test, Port 445/135 Scan, Remote Target Spooler Reset).
-- PrintBRM (Printer Backup/Restore Migration) native integration.
-- Spooler Watchdog scheduled task implementation for high-availability environments.
-- System Restore Point native integration for secure pre-execution rollback.
-- Detailed operational logging with HTML export capabilities.
+## [2.0.0] - 2026-05-20
+### 初始版本
+- 初始发布
+- 包含 30 个核心修复功能
+- 支持 Windows 10/11
+- 支持 PowerShell 5.1+
