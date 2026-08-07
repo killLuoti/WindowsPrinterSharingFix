@@ -2847,25 +2847,56 @@ function Detect-Win {
     Write-Host " 时区: " -NoNewline
     Write-Host "$(Get-TimeZone | Select-Object -ExpandProperty Id) | $(Get-Date -Format 'HH.mm.ss')" -ForegroundColor Red
     Write-Host " 作者: @KHAIRUDINFAHMI (2026) | 汉化版" -ForegroundColor Magenta
-    Write-Host ("=" * 238) -ForegroundColor DarkGray
+    Write-Host ("=" * 175) -ForegroundColor DarkGray
 
     try {
         $rawUI = $Host.UI.RawUI
         $bufSize = $rawUI.BufferSize
-        if ($bufSize.Width -lt 245) {
-            $bufSize.Width = 245
+        if ($bufSize.Width -lt 180) {
+            $bufSize.Width = 180
             $rawUI.BufferSize = $bufSize
         }
         $winSize = $rawUI.WindowSize
-        if ($winSize.Width -lt 245) {
-            $winSize.Width = 245
+        if ($winSize.Width -lt 180) {
+            $winSize.Width = 180
             $rawUI.WindowSize = $winSize
         }
     } catch {}
 
-    $cw1 = 80
-    $cw2 = 78
-    $cw3 = 80
+    # ---- 计算字符串在控制台中的显示宽度（全角=2，半角=1） ----
+    function Get-DisplayWidth([string]$s) {
+        $w = 0
+        foreach ($c in $s.ToCharArray()) {
+            if ([char]::GetUnicodeCategory($c) -in @('OtherLetter', 'OtherScript')) {
+                $w += 2
+            } else {
+                $w += 1
+            }
+        }
+        return $w
+    }
+
+    # ---- 按显示宽度填充（右侧补空格），超宽时截断加省略号 ----
+    function PadRightDisplay([string]$s, [int]$targetWidth) {
+        $cur = Get-DisplayWidth $s
+        if ($cur -ge $targetWidth) {
+            $truncated = ''
+            $w = 0
+            foreach ($c in $s.ToCharArray()) {
+                $cw = if ([char]::GetUnicodeCategory($c) -in @('OtherLetter', 'OtherScript')) { 2 } else { 1 }
+                if ($w + $cw -gt $targetWidth - 2) { break }
+                $truncated += $c
+                $w += $cw
+            }
+            if ($truncated.Length -lt $s.Length) { $truncated += '…' }
+            return $truncated
+        }
+        return $s + (' ' * ($targetWidth - $cur))
+    }
+
+    $cw1 = 62
+    $cw2 = 55
+    $cw3 = 58
     $totalW = $cw1 + $cw2 + $cw3
 
     Write-Host (" 核心修复与网络服务".PadRight($cw1)) -ForegroundColor Cyan -NoNewline
@@ -2972,38 +3003,32 @@ function Detect-Win {
 
     $maxRows = 30
     for ($i = 0; $i -lt $maxRows; $i++) {
+        $line = ""
 
+        # 第一列
         if ($i -lt $col1.Count) {
-            $m1 = [regex]::Match($col1[$i], '^(\[\d+\])(.*)')
-            if ($m1.Success) {
-                Write-Host (" " + $m1.Groups[1].Value) -ForegroundColor Green -NoNewline
-                Write-Host $m1.Groups[2].Value.PadRight($cw1 - 6) -ForegroundColor Green -NoNewline
-            } else { Write-Host (" " + $col1[$i].PadRight($cw1 - 1)) -ForegroundColor Green -NoNewline }
-        } else { Write-Host (" " * ($cw1 - 1)) -NoNewline }
+            $line += PadRightDisplay (" " + $col1[$i]) ($cw1 + 1)
+        } else {
+            $line += (' ' * ($cw1 + 1))
+        }
+        $line += " "
 
-        Write-Host " " -NoNewline
-
+        # 第二列
         if ($i -lt $col2.Count) {
-            $m2 = [regex]::Match($col2[$i], '^(\[\d+\])(.*)')
-            if ($m2.Success) {
-                Write-Host $m2.Groups[1].Value -ForegroundColor Green -NoNewline
-                Write-Host $m2.Groups[2].Value.PadRight($cw2 - 5) -ForegroundColor Green -NoNewline
-            } else { Write-Host $col2[$i].PadRight($cw2 - 1) -ForegroundColor Green -NoNewline }
-        } else { Write-Host (" " * ($cw2 - 1)) -NoNewline }
+            $line += PadRightDisplay $col2[$i] $cw2
+        } else {
+            $line += (' ' * $cw2)
+        }
+        $line += " "
 
-        Write-Host " " -NoNewline
-
+        # 第三列
         if ($i -lt $col3.Count) {
-            $m3 = [regex]::Match($col3[$i], '^(\[\d+\])(.*)')
-            if ($m3.Success) {
-                Write-Host $m3.Groups[1].Value -ForegroundColor Green -NoNewline
-                if ($m3.Groups[1].Value -in @("[83]", "[84]", "[85]")) {
-                    Write-Host $m3.Groups[2].Value -ForegroundColor Red
-                } else {
-                    Write-Host $m3.Groups[2].Value -ForegroundColor Green
-                }
-            } else { Write-Host $col3[$i] -ForegroundColor Green }
-        } else { Write-Host "" }
+            $line += PadRightDisplay $col3[$i] $cw3
+        } else {
+            $line += (' ' * $cw3)
+        }
+
+        Write-Host $line -ForegroundColor Green
     }
 
     Write-Host ("-" * $totalW) -ForegroundColor Red
