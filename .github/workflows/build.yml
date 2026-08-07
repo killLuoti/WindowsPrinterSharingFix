@@ -1,0 +1,121 @@
+name: 编译汉化版 EXE
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      artifact_name:
+        description: '输出文件名（不含后缀）'
+        required: false
+        default: 'WindowsPrinterSharingFix_CN'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 PS2EXE 模块
+        shell: powershell
+        run: |
+          Write-Host "正在安装 ps2exe 模块..." -ForegroundColor Cyan
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Install-Module -Name ps2exe -Force -Scope CurrentUser -AllowClobber -SkipPublisherCheck
+          if (Get-Module -ListAvailable -Name ps2exe) {
+            Write-Host "PS2EXE 安装成功" -ForegroundColor Green
+          } else {
+            Write-Host "PS2EXE 安装失败" -ForegroundColor Red
+            exit 1
+          }
+
+      - name: 编译 EXE
+        shell: powershell
+        run: |
+          $sourceFile = Join-Path $env:GITHUB_WORKSPACE "src\WindowsPrinterSharingFix.ps1"
+          $outputDir  = Join-Path $env:GITHUB_WORKSPACE "release"
+          $iconFile   = Join-Path $env:GITHUB_WORKSPACE "assets\icon.ico"
+
+          if (-not (Test-Path $outputDir)) {
+            New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+          }
+
+          $artifactName = "${{ github.event.inputs.artifact_name || 'WindowsPrinterSharingFix_CN' }}"
+          $outputFile = Join-Path $outputDir "$artifactName.exe"
+
+          Write-Host "正在编译: $sourceFile -> $outputFile" -ForegroundColor Cyan
+
+          $ps2exeParams = @{
+            inputFile    = $sourceFile
+            outputFile   = $outputFile
+            requireAdmin = $true
+            title        = "Windows 打印机共享修复工具"
+            description  = "Windows 打印机共享修复工具（汉化版）"
+            version      = "2.3.2.0"
+            company      = "killLuoti"
+            copyright    = "2026"
+          }
+
+          if (Test-Path $iconFile) {
+            $ps2exeParams.iconFile = $iconFile
+          }
+
+          try {
+            Invoke-ps2exe @ps2exeParams
+            Write-Host "编译成功！" -ForegroundColor Green
+          } catch {
+            Write-Host "编译失败: $_" -ForegroundColor Red
+            exit 1
+          }
+
+      - name: 上传编译产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: WindowsPrinterSharingFix_CN
+          path: release/
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码（用于 Release Notes）
+        uses: actions/checkout@v4
+
+      - name: 下载编译产物
+        uses: actions/download-artifact@v4
+        with:
+          name: WindowsPrinterSharingFix_CN
+          path: release/
+
+      - name: 创建 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Windows 打印机共享修复工具 汉化版 ${{ github.ref_name }}"
+          body: |
+            ## Windows 打印机共享修复工具 - 汉化版 ${{ github.ref_name }}
+
+            基于 [khairudinfahmi/WindowsPrinterSharingFix](https://github.com/khairudinfahmi/WindowsPrinterSharingFix) 的完整汉化版本。
+
+            ### 包含文件
+            - `WindowsPrinterSharingFix_CN.exe` — 便携版，右键以管理员身份运行
+            - `documentation.html` — 中文离线文档
+
+            ### 使用说明
+            1. 以管理员身份运行 `WindowsPrinterSharingFix_CN.exe`
+            2. 输入 `64` → 回车（备份注册表）
+            3. 输入 `84` → 回车（自动全部修复）
+            4. 重启系统
+          files: |
+            release/WindowsPrinterSharingFix_CN.exe
+            release/documentation.html
+          draft: false
+          prerelease: false
