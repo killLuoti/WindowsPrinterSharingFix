@@ -39,40 +39,15 @@ jobs:
       - name: 编译 EXE
         shell: powershell
         run: |
-          $sourceFile = Join-Path $env:GITHUB_WORKSPACE "src\WindowsPrinterSharingFix.ps1"
-          $outputDir  = Join-Path $env:GITHUB_WORKSPACE "release"
-          $iconFile   = Join-Path $env:GITHUB_WORKSPACE "assets\icon.ico"
+          .\build\Compile-ToExe.ps1
 
-          if (-not (Test-Path $outputDir)) {
-            New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
-          }
-
-          $artifactName = "${{ github.event.inputs.artifact_name || 'WindowsPrinterSharingFix_CN' }}"
-          $outputFile = Join-Path $outputDir "$artifactName.exe"
-
-          Write-Host "正在编译: $sourceFile -> $outputFile" -ForegroundColor Cyan
-
-          $ps2exeParams = @{
-            inputFile    = $sourceFile
-            outputFile   = $outputFile
-            requireAdmin = $true
-            title        = "Windows 打印机共享修复工具"
-            description  = "Windows 打印机共享修复工具（汉化版）"
-            version      = "2.3.2.0"
-            company      = "killLuoti"
-            copyright    = "2026"
-          }
-
-          if (Test-Path $iconFile) {
-            $ps2exeParams.iconFile = $iconFile
-          }
-
-          try {
-            Invoke-ps2exe @ps2exeParams
-            Write-Host "编译成功！" -ForegroundColor Green
-          } catch {
-            Write-Host "编译失败: $_" -ForegroundColor Red
-            exit 1
+      - name: 重命名产物（手动触发时）
+        if: github.event_name == 'workflow_dispatch'
+        shell: powershell
+        run: |
+          $name = "${{ github.event.inputs.artifact_name }}"
+          if (Test-Path "release\WindowsPrinterSharingFix_CN.exe") {
+            Rename-Item "release\WindowsPrinterSharingFix_CN.exe" "$name.exe" -Force
           }
 
       - name: 上传编译产物

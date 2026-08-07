@@ -1,4 +1,4 @@
-[Setup]
+﻿[Setup]
 AppName=Windows 打印机共享修复工具
 AppVersion=2.3.2
 AppPublisher=khairudinfahmi
