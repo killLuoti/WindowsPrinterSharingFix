@@ -1,18 +1,18 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Windows 打印机共享修复工具 - v2.3.2
-    @KHAIRUDINFAHMI（汉化版）
+    Windows Printer Sharing Fix - v2.4.0
+    @KHAIRUDINFAHMI
 
 .PARAMETER nuke
-    静默全部修复模式 - 自动执行全部 50 项修复后自动重启。
+    Silent AllFix mode - executes all 50 fixes then reboots automatically.
 #>
 
 param(
     [switch]$nuke
 )
 
-$script:version    = "2.3.2"
+$script:version    = "2.4.0"
 $script:backupDir  = "C:\WindowsPrinterSharingFixBackup"
 $script:silentNuke = $nuke
 
@@ -90,7 +90,7 @@ function Write-Log {
     }
 
     if ($Type -eq "ERROR") {
-        Write-Host "  [错误] $Message" -ForegroundColor Red
+        Write-Host "  [ERROR] $Message" -ForegroundColor Red
     }
     elseif ($Type -eq "WARNING") {
         Write-Host "  [!] $Message" -ForegroundColor Yellow
@@ -110,8 +110,8 @@ function Test-Administrator {
 }
 
 function Restart-Elevated {
-    Write-Host "`n  [!] 请稍候... 正在请求管理员权限。" -ForegroundColor Yellow
-    Write-Host "  [!] 请在 UAC 弹窗中点击「是」以继续。" -ForegroundColor Yellow
+    Write-Host "`n  [!] Standby... Requesting Administrator elevation." -ForegroundColor Yellow
+    Write-Host "  [!] Click 'YES' on the UAC prompt to proceed." -ForegroundColor Yellow
 
     $isExe = $false
     $exePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
@@ -125,9 +125,15 @@ function Restart-Elevated {
         Start-Process -FilePath $exePath -ArgumentList $cmdArgs -Verb RunAs
     }
     else {
-        $cmdArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-        if ($script:silentNuke) { $cmdArgs += " -nuke" }
-        Start-Process powershell -Verb RunAs -ArgumentList $cmdArgs
+        $targetScript = if ($PSCommandPath) { $PSCommandPath } elseif ($MyInvocation.MyCommand.Path) { $MyInvocation.MyCommand.Path } else { "" }
+        if ($targetScript) {
+            $cmdArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$targetScript`""
+            if ($script:silentNuke) { $cmdArgs += " -nuke" }
+            Start-Process powershell -Verb RunAs -ArgumentList $cmdArgs
+        } else {
+            Write-Host "  [-] Please run this script in an elevated Administrator PowerShell prompt." -ForegroundColor Red
+            Pause-User
+        }
     }
     exit
 }
@@ -138,37 +144,37 @@ function Initialize-Log {
     }
     try {
         Add-Content -Path $script:logFile -Value ("=" * 60) -Encoding UTF8 -ErrorAction SilentlyContinue
-        Add-Content -Path $script:logFile -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Windows 打印机共享修复工具" -Encoding UTF8 -ErrorAction SilentlyContinue
+        Add-Content -Path $script:logFile -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Windows Printer Sharing Fix" -Encoding UTF8 -ErrorAction SilentlyContinue
 
         if ($script:isARM64) {
-            Add-Content -Path $script:logFile -Value "[检测到 ARM64 架构]" -Encoding UTF8
+            Add-Content -Path $script:logFile -Value "[ARM64 Architecture Detected]" -Encoding UTF8
         }
         if ($script:isServer) {
-            Add-Content -Path $script:logFile -Value "[检测到 Windows Server 版本]" -Encoding UTF8
+            Add-Content -Path $script:logFile -Value "[Windows Server Edition Detected]" -Encoding UTF8
         }
     }
     catch {}
 }
 
-if (-not (Test-Administrator)) {
+if (-not (Test-Administrator) -and $script:skipElevationCheck -ne $true) {
     Restart-Elevated
 }
 Initialize-Log
 
 function Fix-RpcAuthn0x0000011b {
-    Write-Log "正在修复错误 0x0000011b (RpcAuthnLevelPrivacy)..." -Type "INFO"
+    Write-Log "Patching Error 0x0000011b (RpcAuthnLevelPrivacy)..." -Type "INFO"
     try {
         Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Print" -Name RpcAuthnLevelPrivacyEnabled -Value 0 -Type DWord -Force -ErrorAction Stop
-        Write-Log "注册表 0x0000011b 修复成功应用。" -Type "SUCCESS"
-        Write-Host "  [+] 已禁用 RPC 身份验证级别隐私要求。" -ForegroundColor Green
+        Write-Log "Registry 0x0000011b successfully applied." -Type "SUCCESS"
+        Write-Host "  [+] RPC Authentication Level Privacy requirement disabled." -ForegroundColor Green
     }
     catch {
-        Write-Log "修复 0x0000011b 失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to patch 0x0000011b: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-Deep0x00000709 {
-    Write-Log "深度修复 0x00000709 — 正在应用所有 RPC 层..." -Type "INFO"
+    Write-Log "Deep fix 0x00000709 — applying all RPC layers..." -Type "INFO"
     try {
 
         $rpcPath = "HKLM:\Software\Policies\Microsoft\Windows NT\Printers\RPC"
@@ -179,6 +185,10 @@ function Fix-Deep0x00000709 {
         Set-ItemProperty -Path $rpcPath -Name RpcOverNamedPipes       -Value 1 -Type DWord -Force
         Set-ItemProperty -Path $rpcPath -Name RpcAuthenticationLevel  -Value 0 -Type DWord -Force
         Set-ItemProperty -Path $rpcPath -Name ForceKerberosForRpc     -Value 0 -Type DWord -Force
+
+        $polPrinters = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers"
+        if (-not (Test-Path $polPrinters)) { New-Item -Path $polPrinters -Force | Out-Null }
+        Set-ItemProperty -Path $polPrinters -Name RegisterSpoolerRemoteRpcEndPoint -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
 
         $printPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Print"
         Set-ItemProperty -Path $printPath -Name RpcAuthnLevelPrivacyEnabled -Value 0 -Type DWord -Force
@@ -193,10 +203,11 @@ function Fix-Deep0x00000709 {
         $deviceKey = "HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Windows"
         $deviceVal = (Get-ItemProperty $deviceKey -ErrorAction SilentlyContinue).Device
         if ($deviceVal) {
-            Write-Host "  [!] 正在清除旧版 Device 键: $deviceVal" -ForegroundColor Yellow
+            Write-Host "  [!] Purging legacy Device key: $deviceVal" -ForegroundColor Yellow
             Remove-ItemProperty -Path $deviceKey -Name "Device" -ErrorAction SilentlyContinue
-            Write-Log "HKCU Device 键已清除: $deviceVal" -Type "SUCCESS"
+            Write-Log "HKCU Device key purged: $deviceVal" -Type "SUCCESS"
         }
+
         Set-ItemProperty -Path $deviceKey -Name LegacyDefaultPrinterMode -Value 1 -Type DWord -Force
 
         $wppPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\WPP"
@@ -209,17 +220,17 @@ function Fix-Deep0x00000709 {
 
         Restart-Service spooler -Force -ErrorAction SilentlyContinue
 
-        Write-Log "Fix-Deep0x00000709 修复完成。也必须在主机（连接打印机的电脑）上执行。" -Type "SUCCESS"
-        Write-Host "  [+] 已应用全部 0x00000709 修复层。" -ForegroundColor Green
-        Write-Host "  [!] 重要提示：请在主机电脑（直接连接打印机的电脑）上也运行此脚本！" -ForegroundColor Red
+        Write-Log "Fix-Deep0x00000709 complete. MUST also be executed on the HOST machine." -Type "SUCCESS"
+        Write-Host "  [+] All 0x00000709 layers applied." -ForegroundColor Green
+        Write-Host "  [!] IMPORTANT: Run this script on the HOST PC (the one connected to the printer)!" -ForegroundColor Red
     }
     catch {
-        Write-Log "深度修复 0x00000709 失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed Deep 0x00000709 Fix: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-CrossSignedDriverPolicy {
-    Write-Log "正在绕过 KB5089549 交叉签名驱动强制策略（审核模式禁用）..." -Type "INFO"
+    Write-Log "Bypassing KB5089549 Cross-Signed Driver Enforcement (Audit Mode Disable)..." -Type "INFO"
     try {
 
         $ciPath = "HKLM:\SYSTEM\CurrentControlSet\Control\CI\Config"
@@ -232,16 +243,16 @@ function Fix-CrossSignedDriverPolicy {
         if (-not (Test-Path $polPath)) { New-Item -Path $polPath -Force | Out-Null }
         Set-ItemProperty -Path $polPath `
             -Name VerifiedAndReputablePolicyState -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
-        Write-Log "交叉签名驱动强制策略已设为宽松（KB5089549 后续修复）。" -Type "SUCCESS"
-        Write-Host "  [+] 已中和 KB5089549 驱动策略强制。" -ForegroundColor Green
+        Write-Log "Cross-signed driver enforcement set to permissive (post-KB5089549 fix)." -Type "SUCCESS"
+        Write-Host "  [+] KB5089549 driver policy enforcement neutralized." -ForegroundColor Green
     }
     catch {
-        Write-Log "修复交叉签名驱动策略失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to fix cross-signed driver policy: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-HKCU-PrinterKeyPerms {
-    Write-Log "正在修复 HKCU Windows 注册表键权限以允许写入打印机设备..." -Type "INFO"
+    Write-Log "Fixing HKCU Windows registry key permissions for printer device write..." -Type "INFO"
     try {
 
         $regKey = "HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Windows"
@@ -256,16 +267,16 @@ function Fix-HKCU-PrinterKeyPerms {
         )
         $acl.SetAccessRule($rule)
         Set-Acl -Path $regKey -AclObject $acl -ErrorAction Stop
-        Write-Log "HKCU Windows 键：已授予 Everyone (S-1-1-0) 完全控制权限。" -Type "SUCCESS"
-        Write-Host "  [+] 注册表权限修复已应用（打印机设备键已授予 Everyone 完全控制）。" -ForegroundColor Green
+        Write-Log "HKCU Windows key: Everyone (S-1-1-0) FullControl granted." -Type "SUCCESS"
+        Write-Host "  [+] Registry permission fix applied (Everyone = FullControl on printer device key)." -ForegroundColor Green
     }
     catch {
-        Write-Log "修复 HKCU 打印机键权限失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to fix HKCU printer key permissions: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Set-PostPatchTuesdayTask {
-    Write-Log "正在部署 Windows 更新后自动重新应用任务..." -Type "INFO"
+    Write-Log "Deploying Post-Windows-Update Auto-Reapply Task..." -Type "INFO"
     try {
         if (-not (Test-Path $script:backupDir)) {
             New-Item -ItemType Directory -Path $script:backupDir -Force | Out-Null
@@ -273,13 +284,16 @@ function Set-PostPatchTuesdayTask {
         
         $scriptPath = Join-Path $script:backupDir "PrinterFixReapply.ps1"
         $fixScript = @'
+if (-not (Test-Path "HKLM:\Software\Policies\Microsoft\Windows NT\Printers\RPC")) { New-Item "HKLM:\Software\Policies\Microsoft\Windows NT\Printers\RPC" -Force -EA SilentlyContinue | Out-Null }
 Set-ItemProperty "HKLM:\Software\Policies\Microsoft\Windows NT\Printers\RPC" -Name RpcUseNamedPipeProtocol -Value 1 -Type DWord -Force -EA SilentlyContinue
 Set-ItemProperty "HKLM:\Software\Policies\Microsoft\Windows NT\Printers\RPC" -Name ForceKerberosForRpc -Value 0 -Type DWord -Force -EA SilentlyContinue
 Set-ItemProperty "HKLM:\Software\Policies\Microsoft\Windows NT\Printers\RPC" -Name RpcProtocols -Value 7 -Type DWord -Force -EA SilentlyContinue
 Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Print" -Name RpcAuthnLevelPrivacyEnabled -Value 0 -Type DWord -Force -EA SilentlyContinue
 Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Print" -Name RpcOverNamedPipes -Value 1 -Type DWord -Force -EA SilentlyContinue
 Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Print" -Name RpcOverTcp -Value 1 -Type DWord -Force -EA SilentlyContinue
+if (-not (Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\WPP")) { New-Item "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\WPP" -Force -EA SilentlyContinue | Out-Null }
 Set-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\WPP" -Name Enabled -Value 0 -Type DWord -Force -EA SilentlyContinue
+if (-not (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System")) { New-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Force -EA SilentlyContinue | Out-Null }
 Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name LocalAccountTokenFilterPolicy -Value 1 -Type DWord -Force -EA SilentlyContinue
 Restart-Service spooler -Force -EA SilentlyContinue
 '@
@@ -288,29 +302,29 @@ Restart-Service spooler -Force -EA SilentlyContinue
         $cmd = "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$scriptPath`""
         
         & schtasks.exe /create /tn "PrinterFixPostUpdate" /tr $cmd /sc onstart /ru "SYSTEM" /rl HIGHEST /f > $null 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "schtasks ONSTART 返回退出代码 $LASTEXITCODE" }
+        if ($LASTEXITCODE -ne 0) { throw "schtasks ONSTART returned exit code $LASTEXITCODE" }
         
         & schtasks.exe /create /tn "PrinterFixDaily" /tr $cmd /sc daily /st 10:00 /ru "SYSTEM" /rl HIGHEST /f > $null 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "schtasks DAILY 返回退出代码 $LASTEXITCODE" }
+        if ($LASTEXITCODE -ne 0) { throw "schtasks DAILY returned exit code $LASTEXITCODE" }
 
-        # 配置任务允许在电池供电下运行（消除笔记本电脑上的 0x800710E0 错误）
+        # Configure tasks to run on battery power (disables 0x800710E0 error on laptops)
         try {
             $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
             Set-ScheduledTask -TaskName "PrinterFixPostUpdate" -Settings $settings -ErrorAction SilentlyContinue | Out-Null
             Set-ScheduledTask -TaskName "PrinterFixDaily" -Settings $settings -ErrorAction SilentlyContinue | Out-Null
         } catch {}
 
-        Write-Log "Windows 更新后自动重新应用任务部署成功。" -Type "SUCCESS"
-        Write-Host "  [+] 自动重新应用任务已部署。每次重启/更新后注册表修复将自动重新应用。" -ForegroundColor Green
-        Write-Host "  [+] 任务计划程序中已启用任务：'PrinterFixPostUpdate' 和 'PrinterFixDaily'。" -ForegroundColor Cyan
+        Write-Log "Post-Windows-Update reapply task deployed successfully." -Type "SUCCESS"
+        Write-Host "  [+] Auto-reapply task deployed. Registry fixes will re-apply automatically after every reboot/update." -ForegroundColor Green
+        Write-Host "  [+] Task: 'PrinterFixPostUpdate' & 'PrinterFixDaily' are active in Task Scheduler." -ForegroundColor Cyan
     }
     catch {
-        Write-Log "部署更新后任务失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to deploy post-update task: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-Discovery0x00000bc4 {
-    Write-Log "正在绕过错误 0x00000bc4（未找到打印机）..." -Type "INFO"
+    Write-Log "Bypassing Error 0x00000bc4 (No printers were found)..." -Type "INFO"
     try {
         $path = "HKLM:\Software\Policies\Microsoft\Windows NT\Printers\RPC"
         if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
@@ -320,16 +334,16 @@ function Fix-Discovery0x00000bc4 {
         Set-ItemProperty -Path $path -Name RpcProtocols -Value 0x7 -Type DWord -Force -ErrorAction Stop
         Set-ItemProperty -Path $path -Name ForceSetup -Value 1 -Type DWord -Force -ErrorAction Stop
 
-        Write-Log "已通过命名管道与 TCP 强制 RPC 终结点映射。" -Type "SUCCESS"
-        Write-Host "  [+] RPC 打印机发现已明确通过命名管道路由。" -ForegroundColor Green
+        Write-Log "RPC Endpoint Mapper forced via Named Pipes & TCP." -Type "SUCCESS"
+        Write-Host "  [+] RPC printer discovery explicitly routed via Named Pipes." -ForegroundColor Green
     }
     catch {
-        Write-Log "绕过 0x00000bc4 失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to bypass 0x00000bc4: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-NetworkServices {
-    Write-Log "正在修复错误 0x80070035（启动 WSD、SMB、NetBIOS 服务）..." -Type "INFO"
+    Write-Log "Fixing Error 0x80070035 (Starting WSD, SMB, NetBIOS services)..." -Type "INFO"
     $services = @("nlasvc", "Dnscache", "LanmanServer", "LanmanWorkstation", "lmhosts", "fdPHost", "FDResPub", "SSDPSRV", "upnphost", "WdiSystemHost", "WdiServiceHost")
 
     foreach ($svc in $services) {
@@ -338,72 +352,78 @@ function Fix-NetworkServices {
             Start-Service -Name $svc -ErrorAction SilentlyContinue
         }
         catch {
-            Write-Log "警告：无法配置服务 $svc。" -Type "WARNING"
+            Write-Log "Warning: Unable to configure service $svc." -Type "WARNING"
         }
     }
-    Write-Log "网络与 WSD 服务已配置为自动启动。" -Type "SUCCESS"
-    Write-Host "  [+] 所有网络服务均已正常运行。" -ForegroundColor Green
+    Write-Log "Network & WSD services configured for auto-start." -Type "SUCCESS"
+    Write-Host "  [+] All network services are operational." -ForegroundColor Green
 }
 
 function Fix-CSR {
-    Write-Log "正在禁用客户端渲染（错误 0x000006d1）..." -Type "INFO"
+    Write-Log "Disabling Client-Side Rendering (Error 0x000006d1)..." -Type "INFO"
     try {
         $path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers"
         if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
 
         Set-ItemProperty -Path $path -Name DisableClientSideRendering -Value 1 -Type DWord -Force -ErrorAction Stop
-        Write-Log "客户端渲染已成功禁用。" -Type "SUCCESS"
-        Write-Host "  [+] 客户端渲染已禁用；打印作业将由主机处理。" -ForegroundColor Green
+        Write-Log "CSR successfully disabled." -Type "SUCCESS"
+        Write-Host "  [+] Client-Side Rendering disabled; Host will process print jobs." -ForegroundColor Green
     }
     catch {
-        Write-Log "禁用客户端渲染失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to disable CSR: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Reset-Spooler {
-    Write-Log "正在终止打印后台处理程序并清空队列..." -Type "INFO"
+    Write-Log "Terminating Print Spooler & Purging Queue..." -Type "INFO"
     try {
         Stop-Service spooler -Force -ErrorAction SilentlyContinue
 
-        Write-Log "正在确保相关进程（splwow64、printfilter）已终止..." -Type "INFO"
+        Write-Log "Ensuring related processes (splwow64, printfilter) are terminated..." -Type "INFO"
         Get-Process -Name "printfilterpipelinesvc", "splwow64" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
         Start-Sleep -Seconds 1
 
-        Write-Log "正在清除过期的打印后台文件..." -Type "INFO"
-        Remove-Item -Path "$env:SystemRoot\System32\Spool\Printers\*" -Force -Recurse -ErrorAction SilentlyContinue
+        Write-Log "Purging stale print spool files..." -Type "INFO"
+        $spoolDir = "$env:SystemRoot\System32\Spool\Printers"
+        if (-not (Test-Path $spoolDir)) { New-Item -ItemType Directory -Path $spoolDir -Force | Out-Null }
+        Remove-Item -Path "$spoolDir\*" -Force -Recurse -ErrorAction SilentlyContinue
+        if (-not (Test-Path $spoolDir)) { New-Item -ItemType Directory -Path $spoolDir -Force | Out-Null }
 
         Start-Sleep -Seconds 1
 
         Set-Service spooler -StartupType Automatic -ErrorAction SilentlyContinue
         Start-Service spooler -ErrorAction Stop
 
-        Write-Log "打印后台处理程序刷新成功！" -Type "SUCCESS"
-        Write-Host "  [+] 打印后台处理程序已成功清空并设置为自动启动（硬重置）。" -ForegroundColor Green
+        Write-Log "Spooler successfully refreshed!" -Type "SUCCESS"
+        Write-Host "  [+] Print Spooler successfully purged and set to Automatic (Hard Reset)." -ForegroundColor Green
     }
     catch {
-        Write-Log "重置后台处理程序失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to reset Spooler: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Enable-SMBGuest {
-    Write-Log "正在启用 SMB 来宾访问（LanmanWorkstation 与 LanmanServer）..." -Type "INFO"
+    Write-Log "Enabling SMB Guest access (LanmanWorkstation & LanmanServer)..." -Type "INFO"
     try {
         $path = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters"
+        if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
         Set-ItemProperty -Path $path -Name AllowInsecureGuestAuth -Value 1 -Type DWord -Force -ErrorAction Stop
 
         $pathServer = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
+        if (-not (Test-Path $pathServer)) { New-Item -Path $pathServer -Force | Out-Null }
         Set-ItemProperty -Path $pathServer -Name EnableSecuritySignature -Value 0 -Type DWord -Force -ErrorAction Stop
 
-        Write-Log "来宾访问已启用。" -Type "SUCCESS"
-        Write-Host "  [+] 已降低 SMB 凭据保护以允许来宾访问。" -ForegroundColor Green
+        Write-Log "Guest access enabled." -Type "SUCCESS"
+        Write-Host "  [+] SMB credential protection lowered to permit Guest access." -ForegroundColor Green
     }
     catch {
-        Write-Log "启用 SMB 来宾访问失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to enable SMB Guest: $($_.Exception.Message)" -Type "ERROR"
     }
 }
+
 function Reset-Network {
-    Write-Log "正在执行完整网络重置（刷新 DNS、NetBIOS、Winsock）..." -Type "INFO"
+    Write-Log "Complete Network Reset (Flush DNS, NetBIOS, Winsock)..." -Type "INFO"
     try {
         $LASTEXITCODE = 0; ipconfig /flushdns > $null 2>&1
         Clear-DnsClientCache -ErrorAction SilentlyContinue
@@ -411,16 +431,16 @@ function Reset-Network {
         $LASTEXITCODE = 0; & netsh int ip reset > $null 2>&1
         $LASTEXITCODE = 0; nbtstat -RR > $null 2>&1
 
-        Write-Log "网络配置已重置。" -Type "SUCCESS"
-        Write-Host "  [+] 网络缓存已成功刷新。" -ForegroundColor Green
+        Write-Log "Network configuration reset." -Type "SUCCESS"
+        Write-Host "  [+] Network caches successfully flushed." -ForegroundColor Green
     }
     catch {
-        Write-Log "重置网络失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to reset network: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Set-NetworkPrivate {
-    Write-Log "正在更改网络配置文件（公用→专用，绕过域）..." -Type "INFO"
+    Write-Log "Mutating Network Profile (Public to Private, bypassing Domain)..." -Type "INFO"
     try {
         $nla = Get-Service nlasvc -ErrorAction SilentlyContinue
         if ($nla -and $nla.Status -ne 'Running') { Start-Service nlasvc -ErrorAction SilentlyContinue }
@@ -434,7 +454,7 @@ function Set-NetworkPrivate {
                     $success = $true
                 }
                 catch {
-                    Write-Log "无法更改配置文件 $($profile.InterfaceAlias)。" -Type "WARNING"
+                    Write-Log "Failed to mutate profile $($profile.InterfaceAlias)." -Type "WARNING"
                 }
             }
             elseif ($profile.NetworkCategory -eq 'Private' -or $profile.NetworkCategory -eq 'DomainAuthenticated') {
@@ -443,32 +463,32 @@ function Set-NetworkPrivate {
         }
 
         if ($success) {
-            Write-Log "专用网络配置文件已安全应用。" -Type "SUCCESS"
-            Write-Host "  [+] 网络已强制设为专用；发现限制已移除。" -ForegroundColor Green
+            Write-Log "Private network profile securely enforced." -Type "SUCCESS"
+            Write-Host "  [+] Network enforced as Private; discovery blocks removed." -ForegroundColor Green
         }
     }
     catch {
-        Write-Log "更改网络配置文件失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to mutate network profile: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Disable-PasswordSharing {
-    Write-Log "正在禁用密码保护共享..." -Type "INFO"
+    Write-Log "Disabling Password Protected Sharing..." -Type "INFO"
     try {
         Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name limitblankpassworduse -Value 0 -Type DWord -Force -ErrorAction Stop
         Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name everyoneincludesanonymous -Value 1 -Type DWord -Force -ErrorAction Stop
         Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -Name restrictnullsessaccess -Value 0 -Type DWord -Force -ErrorAction Stop
 
-        Write-Log "密码保护共享已禁用。" -Type "SUCCESS"
-        Write-Host "  [+] 网络共享已开放（Everyone = 匿名访问）。" -ForegroundColor Green
+        Write-Log "Password Protected Sharing disabled." -Type "SUCCESS"
+        Write-Host "  [+] Network shares opened (Everyone = Anonymous)." -ForegroundColor Green
     }
     catch {
-        Write-Log "禁用密码共享失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to disable password sharing: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-NamedPipes {
-    Write-Log "正在激活 RPC 命名管道..." -Type "INFO"
+    Write-Log "Activating RPC Named Pipes..." -Type "INFO"
     try {
         $rpcPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC"
         if (-not (Test-Path $rpcPath)) { New-Item -Path $rpcPath -Force | Out-Null }
@@ -477,203 +497,212 @@ function Fix-NamedPipes {
         Set-ItemProperty -Path $rpcPath -Name RpcTcpEnable -Value 1 -Type DWord -Force
         Set-ItemProperty -Path $rpcPath -Name RpcProtocols -Value 0x7 -Type DWord -Force
         Set-ItemProperty -Path $rpcPath -Name RpcOverNamedPipes -Value 1 -Type DWord -Force
+        Set-ItemProperty -Path $rpcPath -Name ForceKerberosForRpc -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+
+        $polPrinters = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers"
+        if (-not (Test-Path $polPrinters)) { New-Item -Path $polPrinters -Force | Out-Null }
+        Set-ItemProperty -Path $polPrinters -Name RegisterSpoolerRemoteRpcEndPoint -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
 
         $printPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Print"
         Set-ItemProperty -Path $printPath -Name RpcOverNamedPipes -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
         Set-ItemProperty -Path $printPath -Name RpcOverTcp -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
 
-        Write-Log "命名管道已激活。" -Type "SUCCESS"
-        Write-Host "  [+] RPC 命名管道打印后台路径已修复。" -ForegroundColor Green
+        Write-Log "Named Pipes activated." -Type "SUCCESS"
+        Write-Host "  [+] RPC Named Pipes pathway for print spooling corrected." -ForegroundColor Green
     }
     catch {
-        Write-Log "更改命名管道失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to mutate Named Pipes: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Open-Firewall {
-    Write-Log "正在打开防火墙以允许文件和打印机共享..." -Type "INFO"
+    Write-Log "Opening Firewall for File & Printer Sharing..." -Type "INFO"
     try {
         Enable-NetFirewallRule -Group "@FirewallAPI.dll,-28502" -ErrorAction SilentlyContinue | Out-Null
         Enable-NetFirewallRule -Group "@FirewallAPI.dll,-28509" -ErrorAction SilentlyContinue | Out-Null
         Enable-NetFirewallRule -DisplayGroup "*File*Printer*" -ErrorAction SilentlyContinue | Out-Null
         Enable-NetFirewallRule -DisplayGroup "*Network Discovery*" -ErrorAction SilentlyContinue | Out-Null
 
-        Write-Log "防火墙端口已开放。" -Type "SUCCESS"
-        Write-Host "  [+] Windows Defender 防火墙已配置为允许共享。" -ForegroundColor Green
+        Write-Log "Firewall ports opened." -Type "SUCCESS"
+        Write-Host "  [+] Windows Defender Firewall configured to permit Sharing." -ForegroundColor Green
     }
     catch {
-        Write-Log "更改防火墙规则失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to mutate Firewall rules: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Backup-Registry {
-    Write-Log "正在执行打印机注册表备份..." -Type "INFO"
+    Write-Log "Executing Printer Registry Backup..." -Type "INFO"
     try {
+        if (-not (Test-Path $script:backupDir)) {
+            New-Item -ItemType Directory -Path $script:backupDir -Force | Out-Null
+        }
         $backupCount = 0
         $backupTotal = 5
 
         & reg export "HKLM\SYSTEM\CurrentControlSet\Control\Print" "$script:backupDir\Print.reg" /y > $null 2>&1
-        if ($LASTEXITCODE -eq 0) { $backupCount++ } else { Write-Log "警告：备份 Print 注册表失败。" -Type "WARNING" }
+        if ($LASTEXITCODE -eq 0) { $backupCount++ } else { Write-Log "Warning: Failed to backup Print registry." -Type "WARNING" }
 
         & reg export "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Printers" "$script:backupDir\PrintersPolicy.reg" /y > $null 2>&1
-        if ($LASTEXITCODE -eq 0) { $backupCount++ } else { Write-Log "警告：备份 PrintersPolicy 注册表失败。" -Type "WARNING" }
+        if ($LASTEXITCODE -eq 0) { $backupCount++ } else { Write-Log "Warning: Failed to backup PrintersPolicy registry." -Type "WARNING" }
 
         & reg export "HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" "$script:backupDir\LanmanWorkstation.reg" /y > $null 2>&1
-        if ($LASTEXITCODE -eq 0) { $backupCount++ } else { Write-Log "警告：备份 LanmanWorkstation 注册表失败。" -Type "WARNING" }
+        if ($LASTEXITCODE -eq 0) { $backupCount++ } else { Write-Log "Warning: Failed to backup LanmanWorkstation registry." -Type "WARNING" }
 
         & reg export "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" "$script:backupDir\LanmanServer.reg" /y > $null 2>&1
-        if ($LASTEXITCODE -eq 0) { $backupCount++ } else { Write-Log "警告：备份 LanmanServer 注册表失败。" -Type "WARNING" }
+        if ($LASTEXITCODE -eq 0) { $backupCount++ } else { Write-Log "Warning: Failed to backup LanmanServer registry." -Type "WARNING" }
 
         & reg export "HKLM\SYSTEM\CurrentControlSet\Control\Lsa" "$script:backupDir\Lsa.reg" /y > $null 2>&1
-        if ($LASTEXITCODE -eq 0) { $backupCount++ } else { Write-Log "警告：备份 LSA 注册表失败。" -Type "WARNING" }
+        if ($LASTEXITCODE -eq 0) { $backupCount++ } else { Write-Log "Warning: Failed to backup LSA registry." -Type "WARNING" }
 
-        Write-Log "备份完成（$backupCount/$backupTotal 个配置单元）。" -Type "SUCCESS"
-        Write-Host "  [+] 关键注册表节点已备份到 $script:backupDir（$backupCount/$backupTotal 个配置单元）。" -ForegroundColor Green
+        Write-Log "Backup completed ($backupCount/$backupTotal hives)." -Type "SUCCESS"
+        Write-Host "  [+] Critical registry nodes backed up to $script:backupDir ($backupCount/$backupTotal hives)." -ForegroundColor Green
     }
     catch {
-        Write-Log "备份注册表失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to backup registry: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Check-RPC {
-    Write-Log "正在检查 RPC 和 DCOM 服务状态..." -Type "INFO"
+    Write-Log "Auditing RPC & DCOM service states..." -Type "INFO"
     $rpc = Get-Service -Name RpcSs -ErrorAction SilentlyContinue
-    if ($rpc.Status -ne 'Running') {
+    if ($rpc -and $rpc.Status -ne 'Running') {
         Start-Service RpcSs -ErrorAction SilentlyContinue
-        Write-Host "  [*] RpcSs 离线。正在重新初始化服务。" -ForegroundColor Yellow
+        Write-Host "  [*] RpcSs offline. Re-initializing service." -ForegroundColor Yellow
     }
-    else {
-        Write-Host "  [+] RpcSs 正常运行。" -ForegroundColor Green
+    elseif ($rpc) {
+        Write-Host "  [+] RpcSs operational." -ForegroundColor Green
     }
 
     $dcom = Get-Service -Name DcomLaunch -ErrorAction SilentlyContinue
-    if ($dcom.Status -ne 'Running') {
+    if ($dcom -and $dcom.Status -ne 'Running') {
         Start-Service DcomLaunch -ErrorAction SilentlyContinue
-        Write-Host "  [*] DcomLaunch 离线。正在重新初始化服务。" -ForegroundColor Yellow
+        Write-Host "  [*] DcomLaunch offline. Re-initializing service." -ForegroundColor Yellow
     }
-    else {
-        Write-Host "  [+] DcomLaunch 正常运行。" -ForegroundColor Green
+    elseif ($dcom) {
+        Write-Host "  [+] DcomLaunch operational." -ForegroundColor Green
     }
 }
 
 function Run-SfcDism {
-    Write-Log "正在启动 SFC 和 DISM 序列..." -Type "INFO"
-    Write-Host "`n  [!] 请稍候，此操作需要较长时间..." -ForegroundColor Yellow
-    Write-Host "  [*] [1/2] 正在执行 SFC Scannow 序列..." -ForegroundColor Cyan
+    Write-Log "Initiating SFC and DISM sequences..." -Type "INFO"
+    Write-Host "`n  [!] STANDBY, this operation requires significant time..." -ForegroundColor Yellow
+    Write-Host "  [*] [1/2] SFC Scannow sequence executing..." -ForegroundColor Cyan
     & sfc /scannow
-    Write-Host "  [*] [2/2] 正在执行 DISM RestoreHealth 序列..." -ForegroundColor Cyan
+    Write-Host "  [*] [2/2] DISM RestoreHealth sequence executing..." -ForegroundColor Cyan
     & dism /online /cleanup-image /restorehealth
-    Write-Log "SFC 和 DISM 序列已完成。" -Type "SUCCESS"
-    Write-Host "  [+] 系统文件完整性检查已结束。" -ForegroundColor Green
+    Write-Log "SFC & DISM sequence completed." -Type "SUCCESS"
+    Write-Host "  [+] OS file integrity verification concluded." -ForegroundColor Green
 }
 
 function Manage-Drivers {
-    Write-Log "正在打开打印服务器属性..." -Type "INFO"
-    Write-Host "  [!] 打印服务器属性对话框已打开。请手动清理异常驱动。" -ForegroundColor Yellow
+    Write-Log "Launching Print Server Properties..." -Type "INFO"
+    Write-Host "  [!] Print Server Properties dialog opening. Remove corrupted or unneeded drivers manually." -ForegroundColor Yellow
     Start-Process printui -ArgumentList '/s /t2' -NoNewWindow
 }
 
 function Reset-SpoolerPerm {
-    Write-Log "正在重置后台处理程序目录 ACL 权限..." -Type "INFO"
+    Write-Log "Resetting Spooler directory ACL permissions..." -Type "INFO"
     try {
-        & icacls "$env:SystemRoot\System32\Spool\Printers" /reset /t /c /q > $null 2>&1
-        & icacls "$env:SystemRoot\System32\Spool\Printers" /grant "*S-1-1-0:(OI)(CI)F" /T /C /Q > $null 2>&1
-        Write-Log "后台处理程序 ACL 已重置，Everyone (S-1-1-0) 授权完成。" -Type "SUCCESS"
-        Write-Host "  [+] 打印队列目录权限已重置并授予 Everyone。" -ForegroundColor Green
+        $spoolDir = "$env:SystemRoot\System32\Spool\Printers"
+        if (-not (Test-Path $spoolDir)) { New-Item -ItemType Directory -Path $spoolDir -Force | Out-Null }
+        & icacls "$spoolDir" /reset /t /c /q > $null 2>&1
+        & icacls "$spoolDir" /grant "*S-1-1-0:(OI)(CI)F" /T /C /Q > $null 2>&1
+        Write-Log "Spooler ACL reset & Everyone (S-1-1-0) grant complete." -Type "SUCCESS"
+        Write-Host "  [+] Print queue directory permissions reset and granted to Everyone." -ForegroundColor Green
     }
     catch {
-        Write-Log "重置 ACL 失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to reset ACL: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Manage-SMB1 {
     Write-Host "`n  ======================================================================"
-    Write-Host "                 SMB 1.0 协议管理（旧版）"
+    Write-Host "                 SMB 1.0 PROTOCOL MANAGEMENT (LEGACY)"
     Write-Host "  ======================================================================"
-    Write-Host "  [!] 警告：SMB 1.0 极易受到勒索软件攻击。"
-    Write-Host "  [1] 启用 SMB1（紧急情况）"
-    Write-Host "  [2] 禁用 SMB1（推荐）"
-    $smbopt = Read-Host "  选择选项 (1/2)"
+    Write-Host "  [!] WARNING: SMB 1.0 is highly vulnerable to Ransomware vectors."
+    Write-Host "  [1] ENABLE SMB1 (Emergency) `n  [2] DISABLE SMB1 (Recommended)"
+    $smbopt = Read-Host "  Select Option (1/2)"
     if ($smbopt -eq '1') {
         try {
-            Write-Log "正在启用 SMB 1.0 协议..." -Type "INFO"
+            Write-Log "Enabling SMB 1.0 Protocol..." -Type "INFO"
             Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart -ErrorAction Stop | Out-Null
-            Write-Host "  [+] SMB 1.0 协议已启用。" -ForegroundColor Green
+            Write-Host "  [+] SMB 1.0 Protocol enabled." -ForegroundColor Green
         } catch {
-            Write-Log "启用 SMB1 失败: $($_.Exception.Message)" -Type "ERROR"
+            Write-Log "Failed to enable SMB1: $($_.Exception.Message)" -Type "ERROR"
         }
     }
     if ($smbopt -eq '2') {
         try {
-            Write-Log "正在禁用 SMB 1.0 协议..." -Type "INFO"
+            Write-Log "Disabling SMB 1.0 Protocol..." -Type "INFO"
             Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart -ErrorAction Stop | Out-Null
-            Write-Host "  [+] SMB 1.0 协议已成功禁用，增强安全性。" -ForegroundColor Green
+            Write-Host "  [+] SMB 1.0 Protocol successfully disabled for security." -ForegroundColor Green
         } catch {
-            Write-Log "禁用 SMB1 失败: $($_.Exception.Message)" -Type "ERROR"
+            Write-Log "Failed to disable SMB1: $($_.Exception.Message)" -Type "ERROR"
         }
     }
 }
 
 function Add-Credential {
-    Write-Host "`n  注入 Windows 凭据"
-    $ip = Read-Host "  [?] 目标 IP/主机名（例如 192.168.1.10）"
+    Write-Host "`n  INJECT WINDOWS CREDENTIALS"
+    $ip = Read-Host "  [?] Target IP/Hostname (e.g., 192.168.1.10)"
     if ($null -ne $ip) { $ip = $ip.Trim() }
-    $usr = Read-Host "  [?] 目标主机上的用户名"
+    $usr = Read-Host "  [?] Username on Target Host"
     if ($null -ne $usr) { $usr = $usr.Trim() }
-    $pass = Read-Host "  [?] 目标主机上的密码（明文显示）"
+    $pass = Read-Host "  [?] Password on Target Host (Visible Text)"
 
     if (-not $ip -or -not $usr) {
-        Write-Host "  [-] 已取消 - 需要目标主机和用户名。" -ForegroundColor Red
+        Write-Host "  [-] Cancelled - target host and username are required." -ForegroundColor Red
         return
     }
 
     try {
         $proc = Start-Process -FilePath "cmdkey.exe" -ArgumentList "/add:$ip", "/user:$usr", "/pass:`"$pass`"" -WindowStyle Hidden -Wait -PassThru
         if ($proc.ExitCode -eq 0) {
-            Write-Log "已为 $ip 注入凭据。" -Type "SUCCESS"
-            Write-Host "  [+] 凭据已成功提交到 Windows 凭据管理器。" -ForegroundColor Green
+            Write-Log "Credential for $ip injected." -Type "SUCCESS"
+            Write-Host "  [+] Credentials successfully committed to Windows Vault." -ForegroundColor Green
         } else {
-            Write-Log "cmdkey 返回退出代码 $($proc.ExitCode)（用于 $ip）。" -Type "ERROR"
-            Write-Host "  [-] 凭据注入失败（退出代码 $($proc.ExitCode)）。" -ForegroundColor Red
+            Write-Log "cmdkey returned exit code $($proc.ExitCode) for $ip." -Type "ERROR"
+            Write-Host "  [-] Credential injection failed (exit code $($proc.ExitCode))." -ForegroundColor Red
         }
         Start-Sleep -Seconds 1
     }
     catch {
-        Write-Log "注入凭据失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to inject credential: $($_.Exception.Message)" -Type "ERROR"
     }
     $pass = ""
 }
 
 function Clean-Credential {
-    Write-Host "`n  清除过期 Windows 凭据"
+    Write-Host "`n  PURGE STALE WINDOWS CREDENTIALS"
     & cmdkey /list | Select-String "Target:" | ForEach-Object { Write-Host "  $_" -ForegroundColor Cyan }
-    $del = Read-Host "`n  [?] 输入要清除的目标名称（留空取消）"
+    $del = Read-Host "`n  [?] Enter Target to purge (Leave blank to cancel)"
     if ($del) {
         $del = $del -replace '(?i)^\s*Target:\s*', ''
         try {
             $proc = Start-Process -FilePath "cmdkey.exe" -ArgumentList "/delete:`"$del`"" -WindowStyle Hidden -Wait -PassThru
             if ($proc.ExitCode -eq 0) {
-                Write-Log "凭据 $del 已清除。" -Type "SUCCESS"
-                Write-Host "  [+] 凭据 $del 已成功清除。" -ForegroundColor Green
+                Write-Log "Credential $del purged." -Type "SUCCESS"
+                Write-Host "  [+] Credential $del successfully purged." -ForegroundColor Green
             } else {
-                Write-Log "清除凭据 $del 失败。请检查目标名称。" -Type "ERROR"
-                Write-Host "  [-] 清除凭据 $del 失败。请检查目标名称。" -ForegroundColor Red
+                Write-Log "Failed to purge credential $del. Verify target name." -Type "ERROR"
+                Write-Host "  [-] Failed to purge credential $del. Verify target name." -ForegroundColor Red
             }
         }
         catch {
-            Write-Log "清除凭据失败: $($_.Exception.Message)" -Type "ERROR"
+            Write-Log "Failed to purge credential: $($_.Exception.Message)" -Type "ERROR"
         }
     }
 }
 
 function Start-Troubleshooter {
-    Write-Log "正在执行原生 Windows 疑难解答..." -Type "INFO"
+    Write-Log "Executing native Windows Troubleshooter..." -Type "INFO"
     Start-Process msdt -ArgumentList '/id PrinterDiagnostic' -NoNewWindow
 }
 
 function Force-PrinterOnline {
-    Write-Log "正在强制设置打印机在线状态..." -Type "INFO"
-    $pname = Read-Host "  [?] 输入精确的打印机名称（例如 EPSON L120 Series）"
+    Write-Log "Forcing Printer Online status..." -Type "INFO"
+    $pname = Read-Host "  [?] Input exact Printer Name (e.g., EPSON L120 Series)"
     if ($pname) {
         try {
             $safeName = $pname -replace "'", "''"
@@ -681,76 +710,84 @@ function Force-PrinterOnline {
             if ($prn) {
                 $prn.WorkOffline = $false
                 Set-CimInstance -InputObject $prn -ErrorAction Stop
-                Write-Log "打印机 $pname 状态已强制在线。" -Type "SUCCESS"
-                Write-Host "  [+] 已向 $pname 发送强制在线命令。" -ForegroundColor Green
+                Write-Log "Printer $pname state forced online." -Type "SUCCESS"
+                Write-Host "  [+] Online enforcement command sent to $pname." -ForegroundColor Green
             }
             else {
-                Write-Host "  [-] 此系统上未检测到打印机 $pname。" -ForegroundColor Red
+                Write-Host "  [-] Printer $pname not detected on this system." -ForegroundColor Red
             }
         }
         catch {
-            Write-Log "强制设置打印机在线状态失败: $($_.Exception.Message)" -Type "ERROR"
+            Write-Log "Failed to force printer online status: $($_.Exception.Message)" -Type "ERROR"
         }
     }
 }
 
 function Open-Services {
-    Write-Log "正在启动 Services.msc MMC 管理单元..." -Type "INFO"
+    Write-Log "Launching Services.msc MMC snap-in..." -Type "INFO"
     Start-Process services.msc
 }
 
 function Rollback-Registry {
-    Write-Log "正在从备份还原注册表..." -Type "INFO"
-    if (Test-Path "$script:backupDir\Print.reg") {
+    Write-Log "Restoring Registry from Backup..." -Type "INFO"
+    $restoreFiles = @(
+        @{ File = "Print.reg"; Label = "Print" },
+        @{ File = "PrintersPolicy.reg"; Label = "PrintersPolicy" },
+        @{ File = "LanmanWorkstation.reg"; Label = "LanmanWorkstation" },
+        @{ File = "LanmanServer.reg"; Label = "LanmanServer" },
+        @{ File = "Lsa.reg"; Label = "LSA" }
+    )
+    $hasAnyBackup = $false
+    foreach ($entry in $restoreFiles) {
+        if (Test-Path (Join-Path $script:backupDir $entry.File)) { $hasAnyBackup = $true; break }
+    }
+    if ($hasAnyBackup) {
         $restoreCount = 0
-        $restoreFiles = @(
-            @{ File = "Print.reg"; Label = "Print" },
-            @{ File = "PrintersPolicy.reg"; Label = "PrintersPolicy" },
-            @{ File = "LanmanWorkstation.reg"; Label = "LanmanWorkstation" },
-            @{ File = "LanmanServer.reg"; Label = "LanmanServer" },
-            @{ File = "Lsa.reg"; Label = "LSA" }
-        )
         foreach ($entry in $restoreFiles) {
             $filePath = Join-Path $script:backupDir $entry.File
             if (Test-Path $filePath) {
-                & reg import $filePath > $null 2>&1
+                & reg import "$filePath" > $null 2>&1
                 if ($LASTEXITCODE -eq 0) {
                     $restoreCount++
                 } else {
-                    Write-Log "警告：还原 $($entry.Label) 失败。" -Type "WARNING"
-                    Write-Host "  [!] 还原 $($entry.Label) 失败。" -ForegroundColor Yellow
+                    Write-Log "Warning: Failed to restore $($entry.Label)." -Type "WARNING"
+                    Write-Host "  [!] Failed to restore $($entry.Label)." -ForegroundColor Yellow
                 }
             } else {
-                Write-Host "  [*] 跳过 $($entry.Label)（未找到备份文件）。" -ForegroundColor Cyan
+                Write-Host "  [*] Skipped $($entry.Label) (no backup file found)." -ForegroundColor Cyan
             }
         }
-        Write-Log "注册表回滚完成（已还原 $restoreCount 个文件）。" -Type "SUCCESS"
-        Write-Host "  [+] 注册表回滚完成（从 $script:backupDir 还原了 $restoreCount 个文件）。" -ForegroundColor Green
+        Write-Log "Registry rollback completed ($restoreCount files restored)." -Type "SUCCESS"
+        Write-Host "  [+] Registry rollback completed ($restoreCount file(s) restored from $script:backupDir)." -ForegroundColor Green
     }
     else {
-        Write-Host "  [-] 错误：在 $script:backupDir 中未检测到备份文件。" -ForegroundColor Red
+        Write-Host "  [-] Failure: Backup files not detected in $script:backupDir." -ForegroundColor Red
     }
 }
 
 function Disable-IPv6 {
-    Write-Log "正在禁用 IPv6 协议栈..." -Type "INFO"
+    Write-Log "Disabling IPv6 Stack..." -Type "INFO"
     try {
-        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters" -Name DisabledComponents -Value 0xffffffff -Type DWord -Force -ErrorAction Stop
-        Write-Log "已通过注册表更改禁用 IPv6。" -Type "SUCCESS"
-        Write-Host "  [+] 已禁用 IPv6 以防止路由冲突。需要重启系统。" -ForegroundColor Green
+        $tcp6Path = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters"
+        if (-not (Test-Path $tcp6Path)) { New-Item -Path $tcp6Path -Force | Out-Null }
+        Set-ItemProperty -Path $tcp6Path -Name DisabledComponents -Value 0xffffffff -Type DWord -Force -ErrorAction Stop
+        Write-Log "IPv6 disabled via registry change." -Type "SUCCESS"
+        Write-Host "  [+] IPv6 disabled to prevent routing conflicts. System reboot required." -ForegroundColor Green
     }
     catch {
-        Write-Log "禁用 IPv6 失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to disable IPv6: $($_.Exception.Message)" -Type "ERROR"
     }
-}function Generate-HtmlLog {
-    Write-Log "正在生成 HTML 诊断报告..." -Type "INFO"
+}
+
+function Generate-HtmlLog {
+    Write-Log "Generating HTML Diagnostic Report..." -Type "INFO"
     $htmlFile = "$script:backupDir\Report.html"
     $rawLog = Get-Content $script:logFile -Raw -ErrorAction SilentlyContinue
     $encodedLog = [System.Net.WebUtility]::HtmlEncode($rawLog)
     $htmlContent = @"
 <html>
 <head>
-    <title>Windows 打印机共享修复工具 - 日志</title>
+    <title>Windows Printer Sharing Fix - Log</title>
     <style>
         body { font-family: 'Courier New', monospace; background: #0b0f19; color: #00ffcc; padding: 20px; }
         h1 { color: #ff0055; border-bottom: 2px solid #333; padding-bottom: 10px; }
@@ -758,118 +795,118 @@ function Disable-IPv6 {
     </style>
 </head>
 <body>
-    <h1>Windows 打印机共享修复工具 - 诊断报告</h1>
-    <p>生成时间: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | 目标系统: $([System.Net.WebUtility]::HtmlEncode($script:productName))</p>
+    <h1>Windows Printer Sharing Fix Diagnostics Report</h1>
+    <p>Generation Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | Target OS: $([System.Net.WebUtility]::HtmlEncode($script:productName))</p>
     <pre>$encodedLog</pre>
 </body>
 </html>
 "@
     $htmlContent | Out-File $htmlFile -Encoding UTF8
-    Write-Log "HTML 日志已生成到 $htmlFile。" -Type "SUCCESS"
+    Write-Log "HTML Log generated at $htmlFile." -Type "SUCCESS"
     Start-Process $htmlFile
 }
 
 function Test-Connectivity {
     Write-Host "`n  ======================================================================"
-    Write-Host "                 Ping 与网络端口诊断"
+    Write-Host "                 PING & NETWORK PORT DIAGNOSTICS"
     Write-Host "  ======================================================================"
-    $ip = Read-Host "  [?] 输入目标 IP/主机名"
+    $ip = Read-Host "  [?] Input Target IP/Hostname"
     if (-not $ip -or $ip.Trim() -eq '') {
-        Write-Host "  [-] 已取消 - 未提供输入。" -ForegroundColor Red
+        Write-Host "  [-] Cancelled - no input provided." -ForegroundColor Red
         return
     }
     $ip = $ip.Trim()
     if (Test-Connection $ip -Count 1 -Quiet) {
-        Write-Host "  [+] Ping 成功：主机 $ip 可达。" -ForegroundColor Green
+        Write-Host "  [+] PING SUCCESS: Host $ip is reachable." -ForegroundColor Green
 
         $port445 = Test-NetConnection $ip -Port 445 -WarningAction SilentlyContinue
-        if ($port445.TcpTestSucceeded) { Write-Host "  [+] 端口 445 (SMB)：开放" -ForegroundColor Green }
-        else { Write-Host "  [-] 端口 445 (SMB)：关闭（防火墙阻挡）" -ForegroundColor Red }
+        if ($port445.TcpTestSucceeded) { Write-Host "  [+] PORT 445 (SMB): OPEN" -ForegroundColor Green }
+        else { Write-Host "  [-] PORT 445 (SMB): CLOSED (FIREWALL BLOCKED)" -ForegroundColor Red }
 
         $port135 = Test-NetConnection $ip -Port 135 -WarningAction SilentlyContinue
-        if ($port135.TcpTestSucceeded) { Write-Host "  [+] 端口 135 (RPC)：开放" -ForegroundColor Green }
-        else { Write-Host "  [-] 端口 135 (RPC)：关闭（防火墙阻挡）" -ForegroundColor Red }
+        if ($port135.TcpTestSucceeded) { Write-Host "  [+] PORT 135 (RPC): OPEN" -ForegroundColor Green }
+        else { Write-Host "  [-] PORT 135 (RPC): CLOSED (FIREWALL BLOCKED)" -ForegroundColor Red }
     }
     else {
-        Write-Host "  [-] Ping 失败：目标主机不可达或明确阻止 ICMP。" -ForegroundColor Red
-        Write-Host "  [*] 仍将检查 TCP 端口 445 和 135..." -ForegroundColor Cyan
+        Write-Host "  [-] PING FAILED: Target Host unreachable or explicitly blocking ICMP." -ForegroundColor Red
+        Write-Host "  [*] Checking TCP ports 445 and 135 anyway..." -ForegroundColor Cyan
         
         $port445 = Test-NetConnection $ip -Port 445 -WarningAction SilentlyContinue
-        if ($port445.TcpTestSucceeded) { Write-Host "  [+] 端口 445 (SMB)：开放（Ping 被阻止但主机存活）" -ForegroundColor Green }
-        else { Write-Host "  [-] 端口 445 (SMB)：关闭" -ForegroundColor Red }
+        if ($port445.TcpTestSucceeded) { Write-Host "  [+] PORT 445 (SMB): OPEN (Ping was blocked but host is alive)" -ForegroundColor Green }
+        else { Write-Host "  [-] PORT 445 (SMB): CLOSED" -ForegroundColor Red }
 
         $port135 = Test-NetConnection $ip -Port 135 -WarningAction SilentlyContinue
-        if ($port135.TcpTestSucceeded) { Write-Host "  [+] 端口 135 (RPC)：开放（Ping 被阻止但主机存活）" -ForegroundColor Green }
-        else { Write-Host "  [-] 端口 135 (RPC)：关闭" -ForegroundColor Red }
+        if ($port135.TcpTestSucceeded) { Write-Host "  [+] PORT 135 (RPC): OPEN (Ping was blocked but host is alive)" -ForegroundColor Green }
+        else { Write-Host "  [-] PORT 135 (RPC): CLOSED" -ForegroundColor Red }
     }
 }
 
 function Scan-RemotePrinter {
-    Write-Host "`n  远程网络打印机发现"
-    $ip = Read-Host "  [?] 目标 IP/主机名"
-    Write-Host "  [*] 正在扫描 $ip..." -ForegroundColor Cyan
+    Write-Host "`n  REMOTE NETWORK PRINTER DISCOVERY"
+    $ip = Read-Host "  [?] Target IP/Hostname"
+    Write-Host "  [*] Scanning $ip..." -ForegroundColor Cyan
     try {
         $prn = Get-Printer -ComputerName $ip -ErrorAction Stop | Where-Object Shared -eq $true
         if ($prn) {
             $prn | Format-Table Name, ShareName, PortName, PrinterStatus -AutoSize
         }
         else {
-            Write-Host "  [-] 在目标主机上未检测到共享打印机。" -ForegroundColor Yellow
+            Write-Host "  [-] No shared printers detected on the target host." -ForegroundColor Yellow
         }
     }
     catch {
-        Write-Host "  [-] RPC 连接失败。请检查对 $ip 的管理员/来宾访问权限。" -ForegroundColor Red
+        Write-Host "  [-] RPC connection failure. Verify Admin/Guest access to $ip." -ForegroundColor Red
     }
 }
 
 function Remote-SpoolerReset {
     Write-Host "`n  ======================================================================"
-    Write-Host "               远程打印后台处理程序重置"
+    Write-Host "               REMOTE PRINT SPOOLER RESET"
     Write-Host "  ======================================================================"
-    Write-Host "  [!] 需要在远程计算机上具有管理员权限。" -ForegroundColor Yellow
-    $target = Read-Host "  [?] 目标主机名或 IP（例如 192.168.1.10）"
-    if (-not $target) { Write-Host "  [-] 已取消 - 输入为空。" -ForegroundColor Red; return }
+    Write-Host "  [!] Requires admin access on the remote machine." -ForegroundColor Yellow
+    $target = Read-Host "  [?] Target hostname or IP (e.g., 192.168.1.10)"
+    if (-not $target) { Write-Host "  [-] Cancelled - empty input." -ForegroundColor Red; return }
 
-    Write-Log "远程后台处理程序重置目标：$target" -Type "INFO"
+    Write-Log "Remote Spooler Reset targeting: $target" -Type "INFO"
     try {
-        Write-Host "  [*] 正在 Ping $target..." -ForegroundColor Cyan
+        Write-Host "  [*] Pinging $target..." -ForegroundColor Cyan
         if (-not (Test-Connection $target -Count 1 -Quiet)) {
-            Write-Host "  [-] 主机不可达。请检查网络和防火墙。" -ForegroundColor Red
-            Write-Log "远程后台处理程序重置：$target 不可达。" -Type "ERROR"
+            Write-Host "  [-] Host unreachable. Check network and firewall." -ForegroundColor Red
+            Write-Log "Remote-SpoolerReset: $target unreachable." -Type "ERROR"
             return
         }
-        Write-Host "  [+] 主机可达。" -ForegroundColor Green
+        Write-Host "  [+] Host reachable." -ForegroundColor Green
 
-        Write-Host "  [*] 正在停止 $target 上的后台打印程序..." -ForegroundColor Cyan
+        Write-Host "  [*] Stopping Spooler on $target..." -ForegroundColor Cyan
         $stopResult = & sc.exe \\$target stop spooler 2>&1
         Start-Sleep -Seconds 3
 
-        Write-Host "  [*] 正在启动 $target 上的后台打印程序..." -ForegroundColor Cyan
+        Write-Host "  [*] Starting Spooler on $target..." -ForegroundColor Cyan
         $startResult = & sc.exe \\$target start spooler 2>&1
         Start-Sleep -Seconds 2
 
         $queryResult = & sc.exe \\$target query spooler 2>&1
         if ($queryResult -match 'RUNNING') {
-            Write-Log "远程后台打印程序已在 $target 上成功重启。" -Type "SUCCESS"
-            Write-Host "  [+] $target 上的打印后台处理程序现在正在运行。" -ForegroundColor Green
+            Write-Log "Remote Spooler on $target restarted successfully." -Type "SUCCESS"
+            Write-Host "  [+] Print Spooler on $target is now RUNNING." -ForegroundColor Green
         } else {
-            Write-Log "远程后台打印程序在 $target 上可能未重启。请手动检查。" -Type "WARNING"
-            Write-Host "  [!] 后台处理程序状态不确定。请在 $target 上手动验证。" -ForegroundColor Yellow
+            Write-Log "Remote Spooler on $target may not have restarted. Check manually." -Type "WARNING"
+            Write-Host "  [!] Spooler state uncertain. Verify manually on $target." -ForegroundColor Yellow
         }
     } catch {
-        Write-Log "远程后台处理程序重置失败: $($_.Exception.Message)" -Type "ERROR"
-        Write-Host "  [-] 失败: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "  [!] 请确保管理员共享 (C$) 和 RPC（端口 135/445）可访问。" -ForegroundColor Yellow
+        Write-Log "Remote-SpoolerReset failed: $($_.Exception.Message)" -Type "ERROR"
+        Write-Host "  [-] Failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  [!] Ensure admin shares (C$) and RPC (port 135/445) are accessible." -ForegroundColor Yellow
     }
 }
 
 function Log-Manager {
-    Write-Log "正在通过记事本启动日志管理器..." -Type "INFO"
+    Write-Log "Launching Log Manager via Notepad..." -Type "INFO"
     notepad $script:logFile
 }
 
 function Print-Migration {
-    Write-Log "正在启动 PrintBRM 迁移工具..." -Type "INFO"
+    Write-Log "Launching PrintBRM migration utility..." -Type "INFO"
 
     $brmPath = Join-Path $env:SystemRoot "System32\spool\tools\PrintBrm.exe"
     if (-not (Test-Path $brmPath)) {
@@ -877,67 +914,81 @@ function Print-Migration {
     }
 
     if (-not (Test-Path $brmPath)) {
-        Write-Log "此系统上未检测到 PrintBrm.exe。" -Type "ERROR"
-        Write-Host "  [-] 错误：缺少打印迁移工具 (PrintBrm.exe)。" -ForegroundColor Red
-        Write-Host "  [!] 注意：此功能通常仅在 Windows 专业版、企业版或服务器版中可用。" -ForegroundColor Yellow
-        Write-Host "  [!] 您的系统：$script:productName" -ForegroundColor Cyan
+        Write-Log "PrintBrm.exe not detected on this system." -Type "ERROR"
+        Write-Host "  [-] ERROR: Print Migration utility (PrintBrm.exe) is missing." -ForegroundColor Red
+        Write-Host "  [!] NOTE: This feature is typically only available in Windows Pro, Enterprise, or Server editions." -ForegroundColor Yellow
+        Write-Host "  [!] Your OS: $script:productName" -ForegroundColor Cyan
         return
     }
 
-    Write-Host "  [*] 正在以持久命令提示符窗口启动 PrintBrm.exe..." -ForegroundColor Cyan
+    Write-Host "  [*] Launching PrintBrm.exe in a persistent command prompt window..." -ForegroundColor Cyan
     try {
-        Start-Process cmd.exe -ArgumentList "/k cd /d `"$env:SystemRoot\System32\spool\tools\`" & title PrintBRM 迁移工具 & `"$brmPath`" /?"
-        Write-Log "PrintBRM 提示符已成功启动。" -Type "SUCCESS"
-        Write-Host "  [+] PrintBRM 提示符已成功启动！您现在可以执行备份/还原命令。" -ForegroundColor Green
+        Start-Process cmd.exe -ArgumentList "/k cd /d `"$env:SystemRoot\System32\spool\tools\`" & title PrintBRM Migration Utility & `"$brmPath`" /?"
+        Write-Log "PrintBRM prompt launched successfully." -Type "SUCCESS"
+        Write-Host "  [+] PrintBRM prompt successfully launched! You can now execute backup/restore commands." -ForegroundColor Green
     }
     catch {
-        Write-Log "启动 PrintBRM 失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to launch PrintBRM: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Uninstall-Printer {
-    $up = Read-Host "`n  [?] 输入要强制卸载的打印机精确名称"
+    $up = Read-Host "`n  [?] Input exact name of the printer to forcefully uninstall"
     if ($up) {
         try {
             & printui.exe /dl /n "$up"
-            Write-Log "已为 $up 发出卸载命令。" -Type "SUCCESS"
+            Write-Log "Uninstall command issued for $up." -Type "SUCCESS"
         }
         catch {
-            Write-Log "卸载 $up 失败: $($_.Exception.Message)" -Type "ERROR"
+            Write-Log "Failed to uninstall $up : $($_.Exception.Message)" -Type "ERROR"
         }
     }
 }
 
 function Fix-SMBSigning {
-    Write-Log "正在禁用 SMB 签名强制和相互身份验证..." -Type "INFO"
+    Write-Log "Disabling SMB Signing enforcement & Mutual Auth..." -Type "INFO"
     try {
-        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" -Name RequireSecuritySignature -Value 0 -Type DWord -Force -ErrorAction Stop
-        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -Name RequireSecuritySignature -Value 0 -Type DWord -Force -ErrorAction Stop
-        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" -Name RequireMutualAuthentication -Value 0 -Type DWord -Force -ErrorAction Stop
+        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" -Name RequireSecuritySignature -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -Name RequireSecuritySignature -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" -Name RequireMutualAuthentication -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
 
-        Write-Log "SMB 签名强制已禁用。" -Type "SUCCESS"
-        Write-Host "  [+] 已降低 SMB 签名要求（解决 Win 11 NAS/旧版设备连接问题）。" -ForegroundColor Green
+        $polLanman = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\LanmanWorkstation"
+        if (-not (Test-Path $polLanman)) { New-Item -Path $polLanman -Force | Out-Null }
+        Set-ItemProperty -Path $polLanman -Name RequireSecuritySignature -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $polLanman -Name AllowInsecureGuestAuth -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+
+        try {
+            if (Get-Command Set-SmbClientConfiguration -ErrorAction SilentlyContinue) {
+                Set-SmbClientConfiguration -RequireSecuritySignature $false -EnableSecuritySignature $false -Confirm:$false -Force -ErrorAction SilentlyContinue
+            }
+            if (Get-Command Set-SmbServerConfiguration -ErrorAction SilentlyContinue) {
+                Set-SmbServerConfiguration -RequireSecuritySignature $false -EnableSecuritySignature $false -Confirm:$false -Force -ErrorAction SilentlyContinue
+            }
+        } catch {}
+
+        Write-Log "SMB Signing enforcement disabled." -Type "SUCCESS"
+        Write-Host "  [+] SMB Signature requirements dropped (Resolves Win 11 NAS/Legacy connectivity)." -ForegroundColor Green
     }
     catch {
-        Write-Log "禁用 SMB 签名失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to disable SMB signing: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-UWPPrinting {
-    Write-Log "正在绕过 Microsoft Edge 的 UWP AppContainer 隔离..." -Type "INFO"
+    Write-Log "Bypassing UWP AppContainer Isolation for Microsoft Edge..." -Type "INFO"
     try {
         & CheckNetIsolation.exe LoopbackExempt -a -n="microsoft.windows.printdialog_cw5n1h2txyewy" 2>&1 | Out-Null
         & CheckNetIsolation.exe LoopbackExempt -a -n="microsoft.microsoftedge_8wekyb3d8bbwe" 2>&1 | Out-Null
-        Write-Log "已授予回环隔离显式豁免。" -Type "SUCCESS"
-        Write-Host "  [+] 已禁用 Edge 和 UWP 应用的网络回环隔离。" -ForegroundColor Green
+        Write-Log "Loopback Isolation explicit exemption granted." -Type "SUCCESS"
+        Write-Host "  [+] Loopback network isolation for Edge and UWP Apps disabled." -ForegroundColor Green
     }
     catch {
-        Write-Log "绕过 UWP 回环失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to bypass UWP Loopback: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-mDNS {
-    Write-Log "正在启用 mDNS 和 LLMNR 发现协议..." -Type "INFO"
+    Write-Log "Enabling mDNS & LLMNR discovery protocols..." -Type "INFO"
     try {
         $dnsPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient"
         if (-not (Test-Path $dnsPath)) { New-Item -Path $dnsPath -Force | Out-Null }
@@ -947,75 +998,88 @@ function Fix-mDNS {
         if (-not (Test-Path $dnsCachePath)) { New-Item -Path $dnsCachePath -Force | Out-Null }
         Set-ItemProperty -Path $dnsCachePath -Name EnableMDNS -Value 1 -Type DWord -Force -ErrorAction Stop
 
-        Write-Log "mDNS/LLMNR 协议已激活。" -Type "SUCCESS"
+        Write-Log "mDNS/LLMNR protocols activated." -Type "SUCCESS"
     }
     catch {
-        Write-Log "配置 mDNS 失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to configure mDNS: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
+function Enable-WSDDiscovery {
+    Write-Log "Enabling WSD (Web Services on Devices) Discovery Services..." -Type "INFO"
+    $wsdServices = @("fdPHost", "FDResPub", "SSDPSRV", "upnphost")
+    foreach ($s in $wsdServices) {
+        try {
+            Set-Service -Name $s -StartupType Automatic -ErrorAction SilentlyContinue
+            Start-Service -Name $s -ErrorAction SilentlyContinue
+        } catch {}
+    }
+    Write-Log "WSD discovery services (fdPHost, FDResPub, SSDPSRV) activated." -Type "SUCCESS"
+    Write-Host $(switch ($script:lang) { "ZH" { "  [+] WSD 与网络发现服务已成功启用。" } "EN" { "  [+] WSD & Network Discovery services successfully enabled." } default { "  [+] Layanan penemuan WSD & jaringan berhasil diaktifkan." } }) -ForegroundColor Green
+}
+
 function Fix-WSDFirewall {
-    Write-Log "正在确保 WSD (3702) 和 mDNS (5353) 端口无条件开放..." -Type "INFO"
+    Write-Log "Ensuring WSD (3702) & mDNS (5353) Ports are unconditionally open..." -Type "INFO"
     try {
-        Remove-NetFirewallRule -DisplayName "打印机 WSD (UDP 3702 入站)" -ErrorAction SilentlyContinue | Out-Null
-        Remove-NetFirewallRule -DisplayName "打印机 mDNS (UDP 5353 入站)" -ErrorAction SilentlyContinue | Out-Null
+        Remove-NetFirewallRule -DisplayName "Printer WSD (UDP 3702 Inbound)" -ErrorAction SilentlyContinue | Out-Null
+        Remove-NetFirewallRule -DisplayName "Printer mDNS (UDP 5353 Inbound)" -ErrorAction SilentlyContinue | Out-Null
 
-        New-NetFirewallRule -DisplayName "打印机 WSD (UDP 3702 入站)" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 3702 -ErrorAction SilentlyContinue | Out-Null
-        New-NetFirewallRule -DisplayName "打印机 mDNS (UDP 5353 入站)" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 5353 -ErrorAction SilentlyContinue | Out-Null
+        New-NetFirewallRule -DisplayName "Printer WSD (UDP 3702 Inbound)" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 3702 -ErrorAction SilentlyContinue | Out-Null
+        New-NetFirewallRule -DisplayName "Printer mDNS (UDP 5353 Inbound)" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 5353 -ErrorAction SilentlyContinue | Out-Null
 
-        Write-Log "WSD 防火墙规则已成功更新。" -Type "SUCCESS"
-        Write-Host "  [+] 已在防火墙中明确开放 UDP 端口 3702 和 5353。" -ForegroundColor Green
+        Write-Log "WSD Firewall rules successfully updated." -Type "SUCCESS"
+        Write-Host "  [+] UDP Ports 3702 and 5353 explicitly opened in Firewall." -ForegroundColor Green
     }
     catch {
-        Write-Log "配置 WSD 防火墙失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to configure WSD Firewall: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-LSAProtection {
-    Write-Log "正在降级 LSA 保护（允许旧版身份验证）..." -Type "INFO"
+    Write-Log "Downgrading LSA Protection (Permitting legacy authentication)..." -Type "INFO"
     try {
         Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name RunAsPPL -Value 0 -Type DWord -Force -ErrorAction Stop
-        Write-Log "LSA PPL 强制已降级。" -Type "SUCCESS"
-        Write-Host "  [+] LSA 保护已降级。" -ForegroundColor Green
+        Write-Log "LSA PPL enforcement downgraded." -Type "SUCCESS"
+        Write-Host "  [+] LSA Protection downgraded." -ForegroundColor Green
     }
     catch {
-        Write-Log "LSA 保护降级失败: $($_.Exception.Message)（可能由安全启动或凭据保护强制执行）" -Type "WARNING"
-        Write-Host "  [!] 无法更改 LSA 保护 - 系统安全策略可能正在强制执行此设置。" -ForegroundColor Yellow
+        Write-Log "Fix-LSAProtection failed: $($_.Exception.Message) (May be enforced by Secure Boot or Credential Guard)" -Type "WARNING"
+        Write-Host "  [!] LSA Protection could not be changed - system security policy may be enforcing it." -ForegroundColor Yellow
     }
 }
 
 function Fix-SAC {
-    Write-Log "正在绕过智能应用控制 (SAC) 以注入打印驱动..." -Type "INFO"
+    Write-Log "Bypassing Smart App Control (SAC) for print driver injection..." -Type "INFO"
     try {
         $path = "HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy"
         if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
         Set-ItemProperty -Path $path -Name VerifiedAndReputablePolicyState -Value 0 -Type DWord -Force -ErrorAction Stop
-        Write-Log "SAC 活动绕过已部署。" -Type "SUCCESS"
-        Write-Host "  [+] 已绕过智能应用控制。" -ForegroundColor Green
+        Write-Log "SAC active bypass deployed." -Type "SUCCESS"
+        Write-Host "  [+] Smart App Control bypassed." -ForegroundColor Green
     }
     catch {
-        Write-Log "SAC 绕过失败: $($_.Exception.Message)（SAC 可能由 UEFI/策略强制执行）" -Type "WARNING"
-        Write-Host "  [!] SAC 绕过失败 - 可能需要在 Windows 安全中心中手动更改。" -ForegroundColor Yellow
+        Write-Log "Fix-SAC failed: $($_.Exception.Message) (SAC may be enforced by UEFI/policy)" -Type "WARNING"
+        Write-Host "  [!] SAC bypass failed - may require manual change in Windows Security settings." -ForegroundColor Yellow
     }
 }
 
 function Fix-IPPSharing {
-    Write-Log "正在启用 Internet 打印协议 (IPP 和 Mopria)..." -Type "INFO"
+    Write-Log "Enabling Internet Printing Protocol (IPP & Mopria)..." -Type "INFO"
     try {
         if ((Get-WindowsOptionalFeature -Online -FeatureName "Printing-Foundation-Features" -ErrorAction SilentlyContinue)) {
             Enable-WindowsOptionalFeature -Online -FeatureName "Printing-Foundation-Features" -NoRestart -ErrorAction SilentlyContinue | Out-Null
             Enable-WindowsOptionalFeature -Online -FeatureName "Printing-Foundation-InternetPrinting-Client" -NoRestart -ErrorAction SilentlyContinue | Out-Null
-            Write-Log "IPP 基础功能已成功启用。" -Type "SUCCESS"
-            Write-Host "  [+] Windows 功能：Internet 打印客户端已激活。" -ForegroundColor Green
+            Write-Log "IPP Foundation successfully enabled." -Type "SUCCESS"
+            Write-Host "  [+] Windows Feature: Internet Printing Client activated." -ForegroundColor Green
         }
     }
     catch {
-        Write-Log "配置 IPP 失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to configure IPP: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-AdvancedPointAndPrint {
-    Write-Log "正在绕过高级即插即用策略和 PrintNightmare 锁..." -Type "INFO"
+    Write-Log "Bypassing Advanced Point & Print Policies & PrintNightmare Locks..." -Type "INFO"
     try {
         $path = "HKLM:\Software\Policies\Microsoft\Windows NT\Printers\PointAndPrint"
         if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
@@ -1032,65 +1096,69 @@ function Fix-AdvancedPointAndPrint {
         if (-not (Test-Path $pkgPath)) { New-Item -Path $pkgPath -Force | Out-Null }
         Set-ItemProperty -Path $pkgPath -Name PackagePointAndPrintServerList -Value 1 -Type DWord -Force -ErrorAction Stop
 
-        Write-Log "即插即用限制和 PrintNightmare 已完全绕过。" -Type "SUCCESS"
-        Write-Host "  [+] PrintNightmare 提升限制和即插即用已完全解除。" -ForegroundColor Green
+        Write-Log "Point & Print constraints & PrintNightmare entirely bypassed." -Type "SUCCESS"
+        Write-Host "  [+] PrintNightmare Elevation Restrictions and Point & Print fully neutralized." -ForegroundColor Green
     }
     catch {
-        Write-Log "高级即插即用绕过失败: $($_.Exception.Message)" -Type "ERROR"
-        Write-Host "  [-] 即插即用绕过失败: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Log "Fix-AdvancedPointAndPrint failed: $($_.Exception.Message)" -Type "ERROR"
+        Write-Host "  [-] Point & Print bypass failed: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
 
 function Fix-ModernSMB {
-    Write-Log "正在强制使用现代 SMB2/SMB3 服务器配置..." -Type "INFO"
+    Write-Log "Enforcing Modern SMB2/SMB3 Server Configurations..." -Type "INFO"
     try {
         Set-SmbServerConfiguration -EnableSMB2Protocol $true -Force -ErrorAction Stop
-        Write-Log "SMB2/SMB3 拓扑已激活。" -Type "SUCCESS"
-        Write-Host "  [+] 已强制使用 SMB2/SMB3 协议。" -ForegroundColor Green
+        Write-Log "SMB2/SMB3 topologies active." -Type "SUCCESS"
+        Write-Host "  [+] SMB2/SMB3 protocol enforced." -ForegroundColor Green
     }
     catch {
-        Write-Log "强制现代 SMB 失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Fix-ModernSMB failed: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Set-SpoolerRecovery {
-    Write-Log "正在配置打印后台处理程序自动重启恢复..." -Type "INFO"
+    Write-Log "Configuring Print Spooler automatic restart recovery..." -Type "INFO"
     try {
         & sc.exe failure spooler reset= 0 actions= restart/60000/restart/60000/restart/60000 > $null 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "sc.exe 返回退出代码 $LASTEXITCODE" }
-        Write-Log "后台处理程序自动重启恢复已配置。" -Type "SUCCESS"
-        Write-Host "  [+] 已配置崩溃时自动重启后台处理程序。" -ForegroundColor Green
+        if ($LASTEXITCODE -ne 0) { throw "sc.exe returned exit code $LASTEXITCODE" }
+        Write-Log "Spooler Auto-Restart Recovery configured." -Type "SUCCESS"
+        Write-Host "  [+] Spooler auto-restart on crash configured." -ForegroundColor Green
     }
     catch {
-        Write-Log "配置后台处理程序恢复失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Set-SpoolerRecovery failed: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-UACTokenFilter {
-    Write-Log "正在绕过 UAC 网络管理员限制..." -Type "INFO"
+    Write-Log "Bypassing UAC Network Administrator restrictions..." -Type "INFO"
     try {
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name LocalAccountTokenFilterPolicy -Value 1 -Type DWord -Force -ErrorAction Stop
-        Write-Log "LocalAccountTokenFilterPolicy 已设为 1。" -Type "SUCCESS"
-        Write-Host "  [+] UAC 网络管理令牌筛选已禁用。" -ForegroundColor Green
+        $sysPol = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        if (-not (Test-Path $sysPol)) { New-Item -Path $sysPol -Force | Out-Null }
+        Set-ItemProperty -Path $sysPol -Name LocalAccountTokenFilterPolicy -Value 1 -Type DWord -Force -ErrorAction Stop
+        Write-Log "LocalAccountTokenFilterPolicy set to 1." -Type "SUCCESS"
+        Write-Host "  [+] UAC network administration token filtering disabled." -ForegroundColor Green
     }
     catch {
-        Write-Log "UAC 令牌筛选绕过失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Fix-UACTokenFilter failed: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Reset-SpoolerDependency {
-    Write-Log "正在清除第三方后台处理程序依赖项..." -Type "INFO"
+    Write-Log "Purging third-party Spooler dependencies..." -Type "INFO"
     try {
         & sc.exe config spooler depend= RPCSS/http > $null 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "sc.exe 返回退出代码 $LASTEXITCODE" }
-        Write-Log "依赖项已明确重置为 RPCSS 和 http（IPP 兼容）。" -Type "SUCCESS"
-        Write-Host "  [+] 打印后台处理程序依赖项已修复，支持现代 IPP。" -ForegroundColor Green
+        if ($LASTEXITCODE -ne 0) { throw "sc.exe returned exit code $LASTEXITCODE" }
+        Write-Log "Dependencies explicitly reset to RPCSS and http (IPP compliant)." -Type "SUCCESS"
+        Write-Host "  [+] Print Spooler dependencies repaired for modern IPP support." -ForegroundColor Green
     }
     catch {
-        Write-Log "重置后台处理程序依赖项失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Reset-SpoolerDependency failed: $($_.Exception.Message)" -Type "ERROR"
     }
-}function Fix-ProviderOrder {
-    Write-Log "正在将 SMB (LanmanWorkstation) 置于网络提供程序顺序的首位..." -Type "INFO"
+}
+
+function Fix-ProviderOrder {
+    Write-Log "Prioritizing SMB (LanmanWorkstation) in Network Provider Order..." -Type "INFO"
     try {
         $path = "HKLM:\SYSTEM\CurrentControlSet\Control\NetworkProvider\Order"
         $currentOrder = (Get-ItemProperty -Path $path -Name ProviderOrder -ErrorAction SilentlyContinue).ProviderOrder
@@ -1098,302 +1166,332 @@ function Reset-SpoolerDependency {
             $arr = $currentOrder -split "," | Where-Object { $_ -ne "LanmanWorkstation" -and $_ -ne "" }
             $newOrder = "LanmanWorkstation," + ($arr -join ",")
             Set-ItemProperty -Path $path -Name ProviderOrder -Value $newOrder -Force
-            Write-Log "提供程序顺序已明确更新（LanmanWorkstation 优先）。" -Type "SUCCESS"
+            Write-Log "Provider Order explicitly updated (LanmanWorkstation prioritized)." -Type "SUCCESS"
         }
     }
     catch {
-        Write-Log "配置提供程序顺序失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to configure Provider Order: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-NTLMv2 {
-    Write-Log "正在强制严格执行 NTLMv2 响应合规性（NAS 和 Samba 兼容）..." -Type "INFO"
+    Write-Log "Enforcing Strict NTLMv2 Response Compliance (NAS and Samba Compatible)..." -Type "INFO"
     try {
         Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name LmCompatibilityLevel -Value 3 -Type DWord -Force -ErrorAction Stop
-        Write-Log "严格 NTLMv2 已成功强制。" -Type "SUCCESS"
-        Write-Host "  [+] 已强制严格 NTLMv2（级别 3）。NAS 和现代打印共享连接已安全。" -ForegroundColor Green
+        Write-Log "Strict NTLMv2 successfully enforced." -Type "SUCCESS"
+        Write-Host "  [+] Strict NTLMv2 enforced (Level 3). NAS and modern print sharing connections secured." -ForegroundColor Green
     }
     catch {
-        Write-Log "强制 NTLMv2 失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Fix-NTLMv2 failed: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-Network0x00000040 {
-    Write-Log "正在修复错误 0x00000040（网络连接超时）..." -Type "INFO"
+    Write-Log "Fixing Error 0x00000040 (Network connection timeout)..." -Type "INFO"
     try {
-        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" -Name KeepConn -Value 65535 -Type DWord -Force -ErrorAction Stop
+        $lanParam = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters"
+        if (-not (Test-Path $lanParam)) { New-Item -Path $lanParam -Force | Out-Null }
+        Set-ItemProperty -Path $lanParam -Name KeepConn -Value 65535 -Type DWord -Force -ErrorAction Stop
         try {
-            Restart-Service LanmanWorkstation -Force -ErrorAction Stop
+            Get-Service -Name Browser -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Running' } | Stop-Service -Force -ErrorAction SilentlyContinue
+            Restart-Service LanmanWorkstation -Force -ErrorAction SilentlyContinue
         } catch {
-            Write-Log "LanmanWorkstation 重启超时或失败: $($_.Exception.Message)" -Type "WARNING"
+            Write-Log "LanmanWorkstation reload deferred: $($_.Exception.Message)" -Type "INFO"
         }
-        Write-Log "SMB KeepConn 已设为最大值。" -Type "SUCCESS"
-        Write-Host "  [+] 已延长 SMB 连接超时以缓解不稳定的网络拓扑。" -ForegroundColor Green
+        Write-Log "KeepConn SMB set to maximum." -Type "SUCCESS"
+        Write-Host "  [+] SMB connection timeout extended to mitigate unstable network topologies." -ForegroundColor Green
     }
     catch {
-        Write-Log "修复 0x00000040 失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to fix 0x00000040: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-DriverCopy0x00000002 {
-    Write-Log "正在修复错误 0x00000002（驱动 CopyFilesPolicy）..." -Type "INFO"
+    Write-Log "Fixing Error 0x00000002 (Driver CopyFilesPolicy)..." -Type "INFO"
     try {
         Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Print" -Name CopyFilesPolicy -Value 1 -Type DWord -Force -ErrorAction Stop
-        Write-Log "CopyFilesPolicy 已激活。" -Type "SUCCESS"
-        Write-Host "  [+] 已允许 CopyFilesPolicy，以便系统可以从主机获取缺失的驱动程序。" -ForegroundColor Green
+        Write-Log "CopyFilesPolicy activated." -Type "SUCCESS"
+        Write-Host "  [+] CopyFilesPolicy allowed so OS can ingest missing drivers from Host." -ForegroundColor Green
     }
     catch {
-        Write-Log "修复 0x00000002 失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to fix 0x00000002: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-RpcBitness0x0000007e {
-    Write-Log "正在修复错误 0x0000007e（RPC 位数/身份验证错误）..." -Type "INFO"
+    Write-Log "Fixing Error 0x0000007e (RPC Bitness/Auth error)..." -Type "INFO"
     try {
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC" -Name RpcAuthenticationLevel -Value 0 -Type DWord -Force -ErrorAction Stop
-        Write-Log "RPC 身份验证已降级。" -Type "SUCCESS"
-        Write-Host "  [+] 已移除 RPC 身份验证限制以促进跨架构通信。" -ForegroundColor Green
+        $rpcPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC"
+        if (-not (Test-Path $rpcPath)) { New-Item -Path $rpcPath -Force | Out-Null }
+        Set-ItemProperty -Path $rpcPath -Name RpcAuthenticationLevel -Value 0 -Type DWord -Force -ErrorAction Stop
+        Write-Log "RPC Authentication downgraded." -Type "SUCCESS"
+        Write-Host "  [+] RPC Auth limitations removed for cross-architecture communication." -ForegroundColor Green
     }
     catch {
-        Write-Log "修复 0x0000007e 失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to fix 0x0000007e: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Manage-WPP {
     Write-Host "`n  ======================================================================"
-    Write-Host "             Windows 受保护打印 (WPP) 管理"
+    Write-Host "             WINDOWS PROTECTED PRINT (WPP) MANAGEMENT"
     Write-Host "  ======================================================================"
-    Write-Host "  [!] Win 11 24H2+ 的现代功能，提供严格安全保护，但会阻止所有不支持 Mopria 协议的旧版/自定义打印机。"
-    Write-Host "  [1] 启用 WPP（旧版打印机可能无法正常工作）"
-    Write-Host "  [2] 禁用 WPP（安全兼容旧版 LAN 共享 - 推荐）"
-    $opt = Read-Host "  选择选项 (1/2)"
+    Write-Host "  [!] Modern Win 11 24H2+ feature that provides strict security, BUT blocks"
+    Write-Host "      all legacy/custom printers that do not support the Mopria protocol."
+    Write-Host "  [1] ENABLE WPP (Legacy printers will likely fail)"
+    Write-Host "  [2] DISABLE WPP (Safe for Legacy LAN Sharing - Recommended)"
+    $opt = Read-Host "  Select Option (1/2)"
     $wppPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\WPP"
     if (-not (Test-Path $wppPath)) { New-Item -Path $wppPath -Force | Out-Null }
     if ($opt -eq '1') {
         try {
-            Write-Log "正在启用 WPP 模式..." -Type "INFO"
+            Write-Log "Enabling WPP Mode..." -Type "INFO"
             Set-ItemProperty -Path $wppPath -Name Enabled -Value 1 -Type DWord -Force -ErrorAction Stop
-            Write-Host "  [+] WPP 已启用。" -ForegroundColor Yellow
+            Write-Host "  [+] WPP Enabled." -ForegroundColor Yellow
         } catch {
-            Write-Log "启用 WPP 失败: $($_.Exception.Message)" -Type "ERROR"
+            Write-Log "Failed to enable WPP: $($_.Exception.Message)" -Type "ERROR"
         }
     }
     if ($opt -eq '2') {
         try {
-            Write-Log "正在禁用 WPP 模式..." -Type "INFO"
+            Write-Log "Disabling WPP Mode..." -Type "INFO"
             Set-ItemProperty -Path $wppPath -Name Enabled -Value 0 -Type DWord -Force -ErrorAction Stop
-            Write-Host "  [+] WPP 已成功禁用（兼容模式）。" -ForegroundColor Green
+            Write-Host "  [+] WPP Successfully Disabled (Compatibility Mode)." -ForegroundColor Green
         } catch {
-            Write-Log "禁用 WPP 失败: $($_.Exception.Message)" -Type "ERROR"
+            Write-Log "Failed to disable WPP: $($_.Exception.Message)" -Type "ERROR"
         }
     }
 }
 
 function Scan-PrintEventLog {
-    Write-Log "正在读取最近 20 条打印机服务日志..." -Type "INFO"
-    Write-Host "`n  --- Microsoft 打印服务事件日志错误历史 ---" -ForegroundColor Cyan
+    Write-Log "Reading the 20 most recent Printer Service Logs..." -Type "INFO"
+    Write-Host "`n  --- ERROR HISTORY FROM MICROSOFT PRINT SERVICE EVENT LOG ---" -ForegroundColor Cyan
     $events = Get-WinEvent -LogName "Microsoft-Windows-PrintService/Admin" -MaxEvents 20 -ErrorAction SilentlyContinue
     if ($events) {
         $events | Select-Object TimeCreated, Id, Message | Format-Table -AutoSize
     }
     else {
-        Write-Host "  [+] 干净！没有历史故障记录。" -ForegroundColor Green
+        Write-Host "  [+] Clean! No historical failures recorded." -ForegroundColor Green
     }
 }
 
 function Manage-TCPPort {
-    Write-Host "`n  创建手动 TCP/IP 端口"
-    $ip = Read-Host "  [?] 物理打印机 IP（例如 192.168.1.100）"
+    Write-Host "`n  CREATE MANUAL TCP/IP PORT"
+    $ip = Read-Host "  [?] Physical Printer IP (e.g., 192.168.1.100)"
     if ($ip) {
         try {
             Add-PrinterPort -Name "IP_$ip" -PrinterHostAddress $ip -ErrorAction Stop
-            Write-Log "TCP/IP 端口 IP_$ip 已成功创建。" -Type "SUCCESS"
-            Write-Host "  [+] 端口 [IP_$ip] 已成功注入系统。" -ForegroundColor Green
+            Write-Log "TCP/IP Port IP_$ip successfully created." -Type "SUCCESS"
+            Write-Host "  [+] Port [IP_$ip] successfully injected into the system." -ForegroundColor Green
         }
         catch {
-            Write-Log "创建端口失败: $($_.Exception.Message)" -Type "ERROR"
+            Write-Log "Failed to create port: $($_.Exception.Message)" -Type "ERROR"
         }
     }
 }
 
 function Manage-DefaultPrinter {
-    Write-Host "`n  强制设置永久默认打印机"
-    $prn = Read-Host "  [?] 输入要设为默认的打印机精确名称"
+    Write-Host "`n  ENFORCE PERMANENT DEFAULT PRINTER"
+    $prn = Read-Host "  [?] Input exact Printer Name to be set as Default"
     if ($prn) {
         try {
             $safeName = $prn -replace "'", "''"
             $wmi = Get-CimInstance Win32_Printer -Filter "Name='$safeName'" -ErrorAction Stop
             if ($wmi) {
                 Invoke-CimMethod -InputObject $wmi -MethodName SetDefaultPrinter | Out-Null
-                Write-Log "已强制将默认打印机设为 $prn" -Type "SUCCESS"
-                Write-Host "  [+] 系统已强制将 $prn 设为主要默认打印机。" -ForegroundColor Green
+                Write-Log "Default forcefully set to $prn" -Type "SUCCESS"
+                Write-Host "  [+] OS forced to assign $prn as Primary Default." -ForegroundColor Green
             }
             else {
-                Write-Host "  [-] 未检测到打印机。" -ForegroundColor Red
+                Write-Host "  [-] Printer not detected." -ForegroundColor Red
             }
         }
         catch {
-            Write-Log "设置默认打印机失败: $($_.Exception.Message)" -Type "ERROR"
+            Write-Log "Failed to set default printer: $($_.Exception.Message)" -Type "ERROR"
         }
     }
 }
 
 function Set-SpoolerWatchdog {
-    Write-Log "正在注入后台处理程序监视任务..." -Type "INFO"
+    Write-Log "Injecting Spooler Watchdog Task..." -Type "INFO"
     try {
-        $cmd = "powershell.exe -WindowStyle Hidden -Command \`"if((Get-Service spooler).Status -ne 'Running'){ Start-Service spooler }\`""
+        $cmd = "powershell.exe -WindowStyle Hidden -Command \`"`$s = Get-Service spooler -ErrorAction SilentlyContinue; if (`$s -and `$s.Status -ne 'Running'){ Start-Service spooler -ErrorAction SilentlyContinue }\`""
         & schtasks.exe /create /tn "SpoolerWatchdog" /tr $cmd /sc minute /mo 5 /ru "SYSTEM" /rl HIGHEST /f > $null 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "schtasks 返回退出代码 $LASTEXITCODE" }
+        if ($LASTEXITCODE -ne 0) { throw "schtasks returned exit code $LASTEXITCODE" }
         
-        # 配置任务允许在电池供电下运行（消除笔记本电脑上的 0x800710E0 错误）
+        # Configure task to run on battery power (disables 0x800710E0 error on laptops)
         try {
             $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
             Set-ScheduledTask -TaskName "SpoolerWatchdog" -Settings $settings -ErrorAction SilentlyContinue | Out-Null
         } catch {}
 
-        Write-Log "后台处理程序监视已部署（无限制重复，每 5 分钟）。" -Type "SUCCESS"
-        Write-Host "  [+] 后台处理程序监视已激活。每 5 分钟审计一次。" -ForegroundColor Green
+        Write-Log "Spooler Watchdog deployed (indefinite repetition, every 5 min)." -Type "SUCCESS"
+        Write-Host "  [+] Spooler Watchdog active. Audited every 5 minutes indefinitely." -ForegroundColor Green
     }
     catch {
-        Write-Log "监视部署失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed Watchdog deployment: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-RDPPrinter {
-    Write-Log "正在修复 RDP 打印机终端服务重定向..." -Type "INFO"
+    Write-Log "Repairing RDP Printer Terminal Services Redirection..." -Type "INFO"
     try {
-        Set-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -Name fDisableCpm -Value 0 -Type DWord -Force -ErrorAction Stop
-        Set-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services" -Name fEnablePrintRDR -Value 1 -Type DWord -Force -ErrorAction Stop
-        Write-Log "RDP 重定向已激活。" -Type "SUCCESS"
-        Write-Host "  [+] 在远程桌面 (RDP) 会话期间，本地打印机现在可见。" -ForegroundColor Green
+        $tsPath = "HKLM:\Software\Policies\Microsoft\Windows NT\Terminal Services"
+        if (-not (Test-Path $tsPath)) { New-Item -Path $tsPath -Force | Out-Null }
+        Set-ItemProperty -Path $tsPath -Name fDisableCpm -Value 0 -Type DWord -Force -ErrorAction Stop
+        Set-ItemProperty -Path $tsPath -Name fEnablePrintRDR -Value 1 -Type DWord -Force -ErrorAction Stop
+        Write-Log "RDP Redirection activated." -Type "SUCCESS"
+        Write-Host "  [+] Local printers are now visible during Remote Desktop (RDP) sessions." -ForegroundColor Green
     }
     catch {
-        Write-Log "修复 RDP 失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to fix RDP: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-HyperVConflict {
-    Write-Log "正在修复 Hyper-V/WSL 网络发现冲突..." -Type "INFO"
+    Write-Log "Fixing Hyper-V/WSL Network Discovery Conflict..." -Type "INFO"
     try {
         $adapters = Get-NetAdapter | Where-Object { $_.InterfaceDescription -match "Virtual" -or $_.InterfaceDescription -match "Hyper-V" -or $_.InterfaceDescription -match "WSL" }
         if ($adapters) {
             foreach ($adp in $adapters) {
                 Set-NetIPInterface -InterfaceAlias $adp.Name -InterfaceMetric 99 -ErrorAction SilentlyContinue
             }
-            Write-Log "vSwitch 优先级（跃点数）已成功降低。" -Type "SUCCESS"
-            Write-Host "  [+] Hyper-V/WSL 虚拟适配器已降权，以防止干扰本地 LAN/Wi-Fi。" -ForegroundColor Green
+            Write-Log "vSwitch Priority (Metric) successfully lowered." -Type "SUCCESS"
+            Write-Host "  [+] Hyper-V/WSL virtual adapters deprioritized to prevent native LAN/Wi-Fi choking." -ForegroundColor Green
         }
         else {
-            Write-Host "  [*] 未检测到冲突的虚拟适配器。" -ForegroundColor Cyan
+            Write-Host "  [*] No conflicting virtual adapters detected." -ForegroundColor Cyan
         }
     }
     catch {
-        Write-Log "Hyper-V 修复失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed Hyper-V Fix: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Manage-LPR {
-    Write-Log "正在安装旧版 LPR/LPD 协议..." -Type "INFO"
+    Write-Log "Installing legacy LPR/LPD protocols..." -Type "INFO"
     try {
         Enable-WindowsOptionalFeature -Online -FeatureName "Printing-Foundation-LPRPortMonitor" -NoRestart -ErrorAction Stop | Out-Null
-        Write-Log "LPR 端口监视器已安装。" -Type "SUCCESS"
+        Write-Log "LPR Port Monitor Installed." -Type "SUCCESS"
     } catch {
-        Write-Log "安装 LPR 端口监视器失败: $($_.Exception.Message)" -Type "WARNING"
+        Write-Log "Failed to Install LPR Port Monitor: $($_.Exception.Message)" -Type "WARNING"
     }
 
     try {
         Enable-WindowsOptionalFeature -Online -FeatureName "Printing-Foundation-LPDPrintService" -NoRestart -ErrorAction Stop | Out-Null
-        Write-Log "LPD 打印服务已安装。" -Type "SUCCESS"
+        Write-Log "LPD Print Service Installed." -Type "SUCCESS"
     } catch {
-        Write-Log "安装 LPD 服务失败: $($_.Exception.Message)（可能已在最新的 Win 11 版本中弃用）" -Type "WARNING"
+        Write-Log "Failed to Install LPD Service: $($_.Exception.Message) (Potentially deprecated in latest Win 11 builds)" -Type "WARNING"
     }
 
-    Write-Host "  [+] LPR/LPD 安装完成。如果失败，此功能可能已在您的 Windows 版本中弃用。" -ForegroundColor Green
+    Write-Host "  [+] LPR/LPD installation complete. If failed, this feature may be deprecated in your Windows version." -ForegroundColor Green
 }
 
 function Fix-PrintToPDF {
-    Write-Log "正在重新安装/刷新 Microsoft Print to PDF 和 XPS..." -Type "INFO"
-    Write-Host "  [*] 此过程大约需要 10-30 秒..." -ForegroundColor Cyan
+    Write-Log "Reinstalling / Refreshing Microsoft Print to PDF & XPS..." -Type "INFO"
+    Write-Host "  [*] This process requires approximately 10-30 seconds..." -ForegroundColor Cyan
     try {
         Disable-WindowsOptionalFeature -Online -FeatureName "Printing-PrintToPDFServices-Features" -NoRestart -ErrorAction Stop | Out-Null
         Start-Sleep -Seconds 2
         Enable-WindowsOptionalFeature -Online -FeatureName "Printing-PrintToPDFServices-Features" -NoRestart -ErrorAction Stop | Out-Null
-        Write-Log "Print to PDF 已成功刷新。" -Type "SUCCESS"
-        Write-Host "  [+] Microsoft Print to PDF 驱动程序已恢复。建议重启！" -ForegroundColor Green
+        Write-Log "Print to PDF successfully refreshed." -Type "SUCCESS"
+        Write-Host "  [+] Microsoft Print to PDF drivers restored. REBOOT RECOMMENDED." -ForegroundColor Green
     }
     catch {
-        Write-Log "刷新 PrintToPDF 失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to refresh PrintToPDF: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Fix-CredentialGuard {
-    Write-Log "正在绕过凭据保护限制（严格 NTLM）..." -Type "INFO"
+    Write-Log "Bypassing Credential Guard Restrictions (Strict NTLM)..." -Type "INFO"
     try {
         Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name LsaCfgFlags -Value 0 -Type DWord -Force -ErrorAction Stop
-        Write-Log "凭据保护 (LsaCfgFlags) 已禁用。" -Type "SUCCESS"
-        Write-Host "  [+] Win 11 专业版/企业版的严格 NTLM 封锁已缓解。" -ForegroundColor Green
+        Write-Log "Credential Guard protection (LsaCfgFlags) disabled." -Type "SUCCESS"
+        Write-Host "  [+] Strict NTLM blockade in Win 11 Pro/Enterprise alleviated." -ForegroundColor Green
     }
     catch {
-        Write-Log "绕过凭据保护失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed to bypass Credential Guard: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Manage-BITS {
-    Write-Log "正在重启 BITS 服务..." -Type "INFO"
+    Write-Log "Restarting BITS Service..." -Type "INFO"
     try {
-        Restart-Service BITS -Force -ErrorAction Stop
-        Write-Log "后台智能传输服务 (BITS) 已重启。" -Type "SUCCESS"
-        Write-Host "  [+] BITS 服务已重启。" -ForegroundColor Green
+        $bitsSvc = Get-Service -Name BITS -ErrorAction SilentlyContinue
+        if ($bitsSvc) {
+            if ($bitsSvc.StartType -eq "Disabled") {
+                Set-Service -Name BITS -StartupType Manual -ErrorAction SilentlyContinue
+            }
+            Restart-Service BITS -Force -ErrorAction Stop
+            Write-Log "Background Intelligent Transfer Service (BITS) restarted." -Type "SUCCESS"
+            Write-Host "  [+] BITS service restarted." -ForegroundColor Green
+        } else {
+            Write-Log "BITS service not present on this system." -Type "INFO"
+        }
     }
     catch {
-        Write-Log "重启 BITS 失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "BITS service restart deferred: $($_.Exception.Message)" -Type "INFO"
+        Write-Host "  [i] BITS service status checked (managed by Windows Update)." -ForegroundColor Gray
     }
 }
 
 function Create-RestorePoint {
-    Write-Log "正在生成系统还原点..." -Type "INFO"
-    Write-Host "  [*] 正在调用系统保护（请稍候）..." -ForegroundColor Cyan
+    Write-Log "Generating System Restore Point..." -Type "INFO"
+    Write-Host "  [*] Invoking System Protection (Please stand by)..." -ForegroundColor Cyan
     try {
         Enable-ComputerRestore -Drive "C:\" -ErrorAction SilentlyContinue
-        Checkpoint-Computer -Description "WinPrinterSharingFix-安全备份" -RestorePointType "MODIFY_SETTINGS" -ErrorAction Stop
-        Write-Log "系统还原点生成成功。" -Type "SUCCESS"
-        Write-Host "  [+] Windows 还原点已建立。" -ForegroundColor Green
+        $srKey = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore"
+        if (Test-Path $srKey) {
+            Set-ItemProperty -Path $srKey -Name "SystemRestorePointCreationFrequency" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        $warnMsg = $null
+        Checkpoint-Computer -Description "WinPrinterSharingFix-SafetyBackup" -RestorePointType "MODIFY_SETTINGS" -WarningVariable warnMsg -ErrorAction Stop
+        if ($warnMsg) {
+            Write-Log "System Restore note: $($warnMsg[0])" -Type "INFO"
+            Write-Host "  [i] Existing Windows Restore Point within 24 hours preserved." -ForegroundColor Cyan
+        } else {
+            Write-Log "System Restore Point generated successfully." -Type "SUCCESS"
+            Write-Host "  [+] Windows Restore Point established." -ForegroundColor Green
+        }
     }
     catch {
-        Write-Log "生成还原点失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "System Restore note: $($_.Exception.Message)" -Type "INFO"
+        Write-Host "  [i] System Restore point skipped or managed by Windows Protection." -ForegroundColor Gray
     }
 }
 
 function Run-QuickDiagnostics {
     Write-Host "`n  ======================================================================"
-    Write-Host "                 系统诊断"
+    Write-Host "                 SYSTEM DIAGNOSTICS"
     Write-Host "  ======================================================================"
 
     $spool = (Get-Service spooler -ErrorAction SilentlyContinue).Status
     if ($spool -eq 'Running') { $spc = "Green" } else { $spc = "Red" }
-    Write-Host "  [+] 打印后台处理程序 : " -NoNewline; Write-Host $spool -ForegroundColor $spc
+    Write-Host "  [+] Print Spooler : " -NoNewline; Write-Host $spool -ForegroundColor $spc
 
     $rpc = (Get-Service RpcSs -ErrorAction SilentlyContinue).Status
     if ($rpc -eq 'Running') { $rcc = "Green" } else { $rcc = "Red" }
-    Write-Host "  [+] RPC 服务        : " -NoNewline; Write-Host $rpc -ForegroundColor $rcc
+    Write-Host "  [+] RPC Service   : " -NoNewline; Write-Host $rpc -ForegroundColor $rcc
 
     $fw = (Get-Service mpssvc -ErrorAction SilentlyContinue).Status
     if ($fw -eq 'Running') { $fwc = "Green" } else { $fwc = "Red" }
-    Write-Host "  [+] 防火墙          : " -NoNewline; Write-Host $fw -ForegroundColor $fwc
+    Write-Host "  [+] Firewall      : " -NoNewline; Write-Host $fw -ForegroundColor $fwc
 
     $net = Get-NetConnectionProfile -ErrorAction SilentlyContinue | Select-Object -ExpandProperty NetworkCategory
     $netStr = ($net -join ", ")
     if ($netStr -match "Public") { $ntc = "Red" } else { $ntc = "Green" }
-    Write-Host "  [+] 网络配置文件    : " -NoNewline; Write-Host $netStr -ForegroundColor $ntc
+    Write-Host "  [+] Network Profile: " -NoNewline; Write-Host $netStr -ForegroundColor $ntc
 
-    Write-Host "  [+] 系统类型        : " -NoNewline; Write-Host $script:productName -ForegroundColor Cyan
-    if ($script:isARM64) { Write-Host "  [+] 架构            : ARM64（骁龙/Apple M 系列虚拟机）" -ForegroundColor Cyan }
+    Write-Host "  [+] OS Type       : " -NoNewline; Write-Host $script:productName -ForegroundColor Cyan
+    if ($script:isARM64) { Write-Host "  [+] Architecture  : ARM64 (Snapdragon / Apple M Series VM)" -ForegroundColor Cyan }
 
     Write-Host "  ======================================================================"
-}function Fix-V4ClassDriver {
-    Write-Log "正在扫描通用打印类驱动程序 (V4) 是否损坏..." -Type "INFO"
+}
+
+function Fix-V4ClassDriver {
+    Write-Log "Scanning Universal Print Class Driver (V4) for corruption..." -Type "INFO"
     Write-Host "`n  ======================================================================"
-    Write-Host "               通用打印类驱动程序 V4 修复"
+    Write-Host "               UNIVERSAL PRINT CLASS DRIVER V4 REPAIR"
     Write-Host "  ======================================================================"
     try {
         $v4Path = "HKLM:\SYSTEM\CurrentControlSet\Control\Print\Environments\Windows x64\Drivers\Version-4"
@@ -1420,126 +1518,127 @@ function Run-QuickDiagnostics {
             }
         }
         if ($corrupted.Count -gt 0) {
-            Write-Host "  [!] 检测到损坏的 V4 驱动程序：$($corrupted.Count) 个" -ForegroundColor Red
+            Write-Host "  [!] Corrupted V4 drivers detected: $($corrupted.Count)" -ForegroundColor Red
             foreach ($c in $corrupted) { Write-Host "      - $c" -ForegroundColor Yellow }
-            Write-Host "  [*] 正在尝试通过 DriverStore 重新注册进行修复..." -ForegroundColor Cyan
+            Write-Host "  [*] Attempting repair via DriverStore re-registration..." -ForegroundColor Cyan
             $prnmsDir = Get-ChildItem "$env:SystemRoot\System32\DriverStore\FileRepository\prnms*" -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($prnmsDir) {
                 $goodDll = Get-ChildItem $prnmsDir.FullName -Filter "PrintConfig.dll" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
                 if ($goodDll) {
-                    Write-Host "  [+] 已知完好的 PrintConfig.dll 位于 $($goodDll.FullName)" -ForegroundColor Green
-                    Write-Log "PrintConfig.dll 源文件已定位：$($goodDll.FullName)" -Type "SUCCESS"
+                    Write-Host "  [+] Known-good PrintConfig.dll located at $($goodDll.FullName)" -ForegroundColor Green
+                    Write-Log "PrintConfig.dll source located: $($goodDll.FullName)" -Type "SUCCESS"
                     
+                    # Copy the known-good PrintConfig.dll to repair each corrupted directory
                     for ($i = 0; $i -lt $corrupted.Count; $i++) {
                         $destDir = $corruptedDirs[$i]
                         $destFile = Join-Path $destDir "PrintConfig.dll"
                         try {
                             Copy-Item -Path $goodDll.FullName -Destination $destFile -Force -ErrorAction Stop
-                            Write-Host "  [+] 已将 PrintConfig.dll 恢复到 $destDir" -ForegroundColor Green
-                            Write-Log "已将 PrintConfig.dll 恢复到 $destDir" -Type "SUCCESS"
+                            Write-Host "  [+] Restored PrintConfig.dll to $destDir" -ForegroundColor Green
+                            Write-Log "Restored PrintConfig.dll to $destDir" -Type "SUCCESS"
                         } catch {
-                            Write-Host "  [-] 恢复到 $destDir 失败: $($_.Exception.Message)" -ForegroundColor Red
-                            Write-Log "复制 PrintConfig.dll 到 $destDir 失败: $($_.Exception.Message)" -Type "ERROR"
+                            Write-Host "  [-] Failed to restore to $destDir : $($_.Exception.Message)" -ForegroundColor Red
+                            Write-Log "Failed to copy PrintConfig.dll to $destDir : $($_.Exception.Message)" -Type "ERROR"
                         }
                     }
                 }
             }
             & pnputil /scan-devices > $null 2>&1
-            Write-Log "V4 驱动扫描完成。$($corrupted.Count) 个损坏条目已处理。" -Type "WARNING"
+            Write-Log "V4 driver scan complete. $($corrupted.Count) corrupted entries processed." -Type "WARNING"
         }
         else {
-            Write-Host "  [+] 所有 V4 打印类驱动程序均完好无损。" -ForegroundColor Green
-            Write-Log "V4 驱动程序健康。" -Type "SUCCESS"
+            Write-Host "  [+] All V4 Print Class Drivers are intact." -ForegroundColor Green
+            Write-Log "V4 drivers healthy." -Type "SUCCESS"
         }
     }
     catch {
-        Write-Log "V4 扫描失败: $($_.Exception.Message)" -Type "ERROR"
+        Write-Log "Failed V4 scan: $($_.Exception.Message)" -Type "ERROR"
     }
 }
 
 function Switch-DriverMode {
     Write-Host "`n  ======================================================================"
-    Write-Host "               切换 PCL 与 PostScript 驱动程序模式"
+    Write-Host "               TOGGLE PCL vs. POSTSCRIPT DRIVER MODE"
     Write-Host "  ======================================================================"
-    Write-Log "正在启动 PCL/PostScript 驱动切换..." -Type "INFO"
+    Write-Log "Launching PCL/PostScript driver toggle..." -Type "INFO"
     try {
         $printers = Get-Printer -ErrorAction Stop
-        if (-not $printers) { Write-Host "  [-] 未安装打印机。" -ForegroundColor Red; return }
+        if (-not $printers) { Write-Host "  [-] No printers installed." -ForegroundColor Red; return }
         Write-Host ""
         $idx = 1
         foreach ($p in $printers) {
-            Write-Host "  [$idx] $($p.Name) | 驱动：$($p.DriverName)" -ForegroundColor Cyan
+            Write-Host "  [$idx] $($p.Name) | Driver: $($p.DriverName)" -ForegroundColor Cyan
             $idx++
         }
-        $sel = Read-Host "`n  [?] 选择打印机编号"
+        $sel = Read-Host "`n  [?] Select printer number"
         $selIdx = -1
-        try { $selIdx = [int]$sel - 1 } catch { Write-Host "  [-] 输入无效。" -ForegroundColor Red; return }
-        if ($selIdx -lt 0 -or $selIdx -ge $printers.Count) { Write-Host "  [-] 选择无效。" -ForegroundColor Red; return }
+        try { $selIdx = [int]$sel - 1 } catch { Write-Host "  [-] Invalid input." -ForegroundColor Red; return }
+        if ($selIdx -lt 0 -or $selIdx -ge $printers.Count) { Write-Host "  [-] Invalid selection." -ForegroundColor Red; return }
         $target = $printers[$selIdx]
         $allDrivers = Get-PrinterDriver -ErrorAction SilentlyContinue
         $currentDriver = $target.DriverName
-        Write-Host "`n  当前驱动：$currentDriver" -ForegroundColor Yellow
+        Write-Host "`n  Current Driver: $currentDriver" -ForegroundColor Yellow
         if ($currentDriver -match 'PCL') {
             $altDrivers = $allDrivers | Where-Object { $_.Name -match 'PS|PostScript' }
-            Write-Host "  [*] 正在搜索 PostScript 替代..." -ForegroundColor Cyan
+            Write-Host "  [*] Searching for PostScript alternatives..." -ForegroundColor Cyan
         }
         else {
             $altDrivers = $allDrivers | Where-Object { $_.Name -match 'PCL' }
-            Write-Host "  [*] 正在搜索 PCL 替代..." -ForegroundColor Cyan
+            Write-Host "  [*] Searching for PCL alternatives..." -ForegroundColor Cyan
         }
         if ($altDrivers) {
             $idx = 1
             foreach ($d in $altDrivers) { Write-Host "  [$idx] $($d.Name)" -ForegroundColor Green; $idx++ }
-            $drvSel = Read-Host "  [?] 选择替换驱动程序编号（0 取消）"
+            $drvSel = Read-Host "  [?] Select replacement driver number (0 to cancel)"
             if ($drvSel -ne '0') {
                 $drvIdx = -1
-                try { $drvIdx = [int]$drvSel - 1 } catch { Write-Host "  [-] 输入无效。" -ForegroundColor Red; return }
+                try { $drvIdx = [int]$drvSel - 1 } catch { Write-Host "  [-] Invalid input." -ForegroundColor Red; return }
                 if ($drvIdx -ge 0 -and $drvIdx -lt $altDrivers.Count) {
                     Set-Printer -Name $target.Name -DriverName $altDrivers[$drvIdx].Name -ErrorAction Stop
-                    Write-Log "驱动已切换：$($target.Name) -> $($altDrivers[$drvIdx].Name)" -Type "SUCCESS"
-                    Write-Host "  [+] 驱动已成功切换！" -ForegroundColor Green
+                    Write-Log "Driver switched: $($target.Name) -> $($altDrivers[$drvIdx].Name)" -Type "SUCCESS"
+                    Write-Host "  [+] Driver successfully switched!" -ForegroundColor Green
                 }
             }
         }
         else {
-            Write-Host "  [-] 未找到替代驱动程序。请先安装目标驱动程序。" -ForegroundColor Red
+            Write-Host "  [-] No alternative drivers found. Install the target driver first." -ForegroundColor Red
         }
     }
-    catch { Write-Log "驱动切换失败: $($_.Exception.Message)" -Type "ERROR" }
+    catch { Write-Log "Driver toggle failed: $($_.Exception.Message)" -Type "ERROR" }
 }
 
 function Manage-WindowsUpdate {
     Write-Host "`n  ======================================================================"
-    Write-Host "                 Windows 更新与阻止管理"
+    Write-Host "                  WINDOWS UPDATE & BLOCKER MANAGEMENT"
     Write-Host "  ======================================================================"
-    Write-Host "  [1] 卸载特定 KB 更新"
-    Write-Host "  [2] 暂停 Windows 更新 35 天"
-    Write-Host "  [3] 永久禁用 Windows 更新服务（阻止修复被还原）"
-    Write-Host "  [4] 重新启用 Windows 更新服务（恢复默认）"
-    Write-Host "  [5] 取消"
-    $opt = Read-Host "  选择选项 (1-5)"
+    Write-Host "  [1] Uninstall Specific KB Update"
+    Write-Host "  [2] Pause Windows Updates for 35 Days"
+    Write-Host "  [3] Disable Windows Update Services Permanently (Blocks printer fix reversion)"
+    Write-Host "  [4] Re-enable Windows Update Services (Restore defaults)"
+    Write-Host "  [5] Cancel"
+    $opt = Read-Host "  Select Option (1-5)"
 
     switch ($opt) {
         '1' {
-            Write-Log "正在启动 KB 更新卸载程序..." -Type "INFO"
+            Write-Log "Launching KB Update uninstaller..." -Type "INFO"
             try {
-                Write-Host "  [!] 已知的破坏打印机的 KB 更新 (2025-2026)：" -ForegroundColor Red
-                Write-Host "      KB5065426 (2025年9月) - 阻止打印共享 (SID 检查)" -ForegroundColor Yellow
-                Write-Host "      KB5066835 (2025年10月) - 主要打印机共享破坏者" -ForegroundColor Yellow
-                Write-Host "      KB5068661 (2025年11月) - 破坏打印机和网络共享" -ForegroundColor Yellow
-                Write-Host "      KB5089549 (2026年5月) - 交叉签名驱动程序强制" -ForegroundColor Yellow
+                Write-Host "  [!] KNOWN PRINTER-BREAKING KBs (2025-2026):" -ForegroundColor Red
+                Write-Host "      KB5065426 (Sep 2025) - Blocks print sharing (SID check)" -ForegroundColor Yellow
+                Write-Host "      KB5066835 (Oct 2025) - Major printer sharing breaker" -ForegroundColor Yellow
+                Write-Host "      KB5068661 (Nov 2025) - Breaks printer & network sharing" -ForegroundColor Yellow
+                Write-Host "      KB5089549 (May 2026) - Cross-signed driver enforcement" -ForegroundColor Yellow
 
-                Write-Host "  [*] 正在列举最近的 Windows 更新..." -ForegroundColor Cyan
+                Write-Host "  [*] Enumerating recent Windows Updates..." -ForegroundColor Cyan
                 $updates = Get-HotFix -ErrorAction SilentlyContinue | Sort-Object InstalledOn -Descending | Select-Object -First 20
                 if ($updates) { $updates | Format-Table HotFixID, Description, InstalledOn -AutoSize }
-                else { Write-Host "  [-] 未通过 Get-HotFix 检测到任何修补程序。" -ForegroundColor Yellow }
+                else { Write-Host "  [-] No hotfixes detected via Get-HotFix." -ForegroundColor Yellow }
 
-                $kb = Read-Host "`n  [?] 输入要卸载的 KB 编号（例如 KB5034441，留空取消）"
+                $kb = Read-Host "`n  [?] Input KB number to uninstall (e.g., KB5034441, or blank to cancel)"
                 if (-not $kb) { return }
                 $kb = $kb -replace '(?i)^KB', ''
 
                 $dismSuccess = $false
-                Write-Host "  [*] 正在尝试通过 DISM 卸载 KB$kb..." -ForegroundColor Cyan
+                Write-Host "  [*] Attempting to uninstall KB$kb via DISM..." -ForegroundColor Cyan
                 $packages = & dism /online /get-packages 2>&1 | Select-String "Package_for_KB$kb"
 
                 if ($packages) {
@@ -1548,31 +1647,31 @@ function Manage-WindowsUpdate {
 
                     if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
                         $dismSuccess = $true
-                        Write-Log "KB$kb 已通过 DISM 卸载。" -Type "SUCCESS"
-                        Write-Host "  [+] KB$kb 已成功卸载。（可能需要重启）" -ForegroundColor Green
+                        Write-Log "KB$kb uninstalled via DISM." -Type "SUCCESS"
+                        Write-Host "  [+] KB$kb successfully uninstalled. (Reboot may be required)" -ForegroundColor Green
                     } else {
-                        Write-Log "DISM 卸载 KB$kb 失败。退出代码: $($proc.ExitCode)。正在回退到 wusa.exe..." -Type "WARNING"
-                        Write-Host "  [-] DISM 失败（退出代码 $($proc.ExitCode)）。正在尝试 wusa.exe 回退..." -ForegroundColor Yellow
+                        Write-Log "DISM failed to uninstall KB$kb. ExitCode: $($proc.ExitCode). Falling back to wusa.exe..." -Type "WARNING"
+                        Write-Host "  [-] DISM failed (ExitCode $($proc.ExitCode)). Attempting wusa.exe fallback..." -ForegroundColor Yellow
                     }
                 }
 
                 if (-not $dismSuccess) {
-                    Write-Host "  [!] 将出现 Windows 对话框。如果提示，请确认卸载。" -ForegroundColor Cyan
+                    Write-Host "  [!] A Windows dialog will appear. Please confirm the uninstallation if prompted." -ForegroundColor Cyan
                     $proc = Start-Process wusa.exe -ArgumentList "/uninstall /kb:$kb /norestart" -Wait -PassThru
 
                     if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
-                        Write-Log "KB$kb 已通过 wusa 卸载。" -Type "SUCCESS"
-                        Write-Host "  [+] KB$kb 已成功卸载。（可能需要重启）" -ForegroundColor Green
+                        Write-Log "KB$kb uninstalled via wusa." -Type "SUCCESS"
+                        Write-Host "  [+] KB$kb successfully uninstalled. (Reboot may be required)" -ForegroundColor Green
                     } else {
-                        Write-Log "Wusa 卸载 KB$kb 失败/取消。退出代码: $($proc.ExitCode)" -Type "WARNING"
-                        Write-Host "  [-] 卸载失败或已取消。该更新可能是永久性安全更新。" -ForegroundColor Red
+                        Write-Log "Wusa failed/cancelled for KB$kb. ExitCode: $($proc.ExitCode)" -Type "WARNING"
+                        Write-Host "  [-] Uninstallation failed or was cancelled. The update may be a permanent Security Update." -ForegroundColor Red
                     }
                 }
             }
-            catch { Write-Log "KB 卸载失败: $($_.Exception.Message)" -Type "ERROR" }
+            catch { Write-Log "KB uninstall failed: $($_.Exception.Message)" -Type "ERROR" }
         }
         '2' {
-            Write-Log "正在暂停 Windows 更新 35 天..." -Type "INFO"
+            Write-Log "Pausing Windows Update for 35 days..." -Type "INFO"
             try {
                 $wuPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
                 if (-not (Test-Path $wuPath)) { New-Item -Path $wuPath -Force | Out-Null }
@@ -1580,14 +1679,15 @@ function Manage-WindowsUpdate {
                 $pauseStart = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ", [System.Globalization.CultureInfo]::InvariantCulture)
                 $pauseEnd = (Get-Date).AddDays(35).ToString("yyyy-MM-ddTHH:mm:ssZ", [System.Globalization.CultureInfo]::InvariantCulture)
 
+                # Set GPO Policy registry overrides
                 Set-ItemProperty -Path $wuPath -Name PauseQualityUpdatesStartTime -Value $pauseStart -Force -ErrorAction Stop
                 Set-ItemProperty -Path $wuPath -Name PauseFeatureUpdatesStartTime -Value $pauseStart -Force -ErrorAction Stop
                 Set-ItemProperty -Path $wuPath -Name PauseUpdatesExpiryTime -Value $pauseEnd -Force -ErrorAction Stop
                 Set-ItemProperty -Path $wuPath -Name SetDisableUXWUAccess -Value 1 -Type DWord -Force -ErrorAction Stop
 
+                # Set UX Settings registry overrides (used by Windows Settings UX on Home & Pro)
                 $uxPath = "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings"
                 if (-not (Test-Path $uxPath)) { New-Item -Path $uxPath -Force | Out-Null }
-
                 Set-ItemProperty -Path $uxPath -Name PauseUpdatesStartTime -Value $pauseStart -Force -ErrorAction Stop
                 Set-ItemProperty -Path $uxPath -Name PauseFeatureUpdatesStartTime -Value $pauseStart -Force -ErrorAction Stop
                 Set-ItemProperty -Path $uxPath -Name PauseQualityUpdatesStartTime -Value $pauseStart -Force -ErrorAction Stop
@@ -1595,13 +1695,13 @@ function Manage-WindowsUpdate {
                 Set-ItemProperty -Path $uxPath -Name PauseQualityUpdatesEndTime -Value $pauseEnd -Force -ErrorAction Stop
                 Set-ItemProperty -Path $uxPath -Name PauseUpdatesExpiryTime -Value $pauseEnd -Force -ErrorAction Stop
 
-                Write-Host "  [+] Windows 更新已完全暂停 35 天（已应用 GPO 和设置 UX 覆盖）。" -ForegroundColor Green
-                Write-Log "Windows 更新已暂停，直到 $pauseEnd。" -Type "SUCCESS"
+                Write-Host "  [+] Windows Update fully paused for 35 days (GPO and Settings UX overrides applied)." -ForegroundColor Green
+                Write-Log "Windows Update paused until $pauseEnd." -Type "SUCCESS"
             }
-            catch { Write-Log "暂停 Windows 更新失败: $($_.Exception.Message)" -Type "ERROR" }
+            catch { Write-Log "Failed to pause Windows Update: $($_.Exception.Message)" -Type "ERROR" }
         }
         '3' {
-            Write-Log "正在永久禁用 Windows 更新服务..." -Type "INFO"
+            Write-Log "Disabling Windows Update Services Permanently..." -Type "INFO"
             try {
                 $services = @("wuauserv", "UsoSvc", "bits")
                 foreach ($svc in $services) {
@@ -1609,34 +1709,43 @@ function Manage-WindowsUpdate {
                     Stop-Service -Name $svc -Force -ErrorAction SilentlyContinue | Out-Null
                 }
 
-                Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\WaaSMedicSvc" -Name Start -Value 4 -Type DWord -Force -ErrorAction Stop
-                Stop-Service -Name "WaaSMedicSvc" -Force -ErrorAction SilentlyContinue | Out-Null
+                # Disable WaaSMedicSvc via registry bypass if present (sc config WaaSMedicSvc start= disabled returns Access Denied)
+                if (Test-Path "HKLM:\SYSTEM\CurrentControlSet\Services\WaaSMedicSvc") {
+                    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\WaaSMedicSvc" -Name Start -Value 4 -Type DWord -Force -ErrorAction SilentlyContinue
+                    Stop-Service -Name "WaaSMedicSvc" -Force -ErrorAction SilentlyContinue | Out-Null
+                }
 
+                # Configure NoAutoUpdate in Policies registry
                 $auPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
                 if (-not (Test-Path $auPath)) { New-Item -Path $auPath -Force | Out-Null }
                 Set-ItemProperty -Path $auPath -Name NoAutoUpdate -Value 1 -Type DWord -Force -ErrorAction Stop
 
-                Write-Log "Windows 更新服务已永久禁用（Medic 已阻止）。" -Type "SUCCESS"
-                Write-Host "  [+] 核心 Windows 更新服务 (wuauserv, UsoSvc, bits, WaaSMedicSvc) 已禁用。" -ForegroundColor Green
-                Write-Host "  [+] 注册表策略 NoAutoUpdate 已强制设为 1。" -ForegroundColor Green
-                Write-Host "  [!] 安全配置将不再被 Windows 更新还原。" -ForegroundColor Yellow
+                Write-Log "Windows Update Services permanently disabled (Medic blocked)." -Type "SUCCESS"
+                Write-Host "  [+] Core Windows Update services (wuauserv, UsoSvc, bits, WaaSMedicSvc) disabled." -ForegroundColor Green
+                Write-Host "  [+] Registry policy NoAutoUpdate forced to 1." -ForegroundColor Green
+                Write-Host "  [!] Security configurations will no longer be reverted by Windows Update." -ForegroundColor Yellow
             }
-            catch { Write-Log "禁用 Windows 更新失败: $($_.Exception.Message)" -Type "ERROR" }
+            catch { Write-Log "Failed to disable Windows Update: $($_.Exception.Message)" -Type "ERROR" }
         }
         '4' {
-            Write-Log "正在重新启用 Windows 更新服务..." -Type "INFO"
+            Write-Log "Re-enabling Windows Update Services..." -Type "INFO"
             try {
                 & sc.exe config wuauserv start= demand > $null 2>&1
                 & sc.exe config UsoSvc start= auto > $null 2>&1
                 & sc.exe config bits start= demand > $null 2>&1
 
-                Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\WaaSMedicSvc" -Name Start -Value 3 -Type DWord -Force -ErrorAction Stop
+                # Restore WaaSMedicSvc to manual if present
+                if (Test-Path "HKLM:\SYSTEM\CurrentControlSet\Services\WaaSMedicSvc") {
+                    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\WaaSMedicSvc" -Name Start -Value 3 -Type DWord -Force -ErrorAction SilentlyContinue
+                }
 
+                # Remove NoAutoUpdate restriction
                 $auPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
                 if (Test-Path $auPath) {
                     Remove-ItemProperty -Path $auPath -Name NoAutoUpdate -ErrorAction SilentlyContinue | Out-Null
                 }
 
+                # Remove pause overrides from policies
                 $wuPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
                 if (Test-Path $wuPath) {
                     $properties = @("PauseQualityUpdatesStartTime", "PauseFeatureUpdatesStartTime", "PauseUpdatesExpiryTime", "SetDisableUXWUAccess")
@@ -1645,6 +1754,7 @@ function Manage-WindowsUpdate {
                     }
                 }
 
+                # Remove pause overrides from UX settings
                 $uxPath = "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings"
                 if (Test-Path $uxPath) {
                     $properties = @("PauseUpdatesStartTime", "PauseFeatureUpdatesStartTime", "PauseQualityUpdatesStartTime", "PauseFeatureUpdatesEndTime", "PauseQualityUpdatesEndTime", "PauseUpdatesExpiryTime")
@@ -1653,19 +1763,21 @@ function Manage-WindowsUpdate {
                     }
                 }
 
-                Write-Log "Windows 更新服务已恢复为默认启动类型。" -Type "SUCCESS"
-                Write-Host "  [+] Windows 更新服务已恢复为默认状态。" -ForegroundColor Green
-                Write-Host "  [+] 自动更新和暂停限制已移除。" -ForegroundColor Green
+                Write-Log "Windows Update Services restored to default startup types." -Type "SUCCESS"
+                Write-Host "  [+] Windows Update services restored to default states." -ForegroundColor Green
+                Write-Host "  [+] Automatic Update and pause restrictions removed." -ForegroundColor Green
             }
-            catch { Write-Log "恢复 Windows 更新失败: $($_.Exception.Message)" -Type "ERROR" }
+            catch { Write-Log "Failed to restore Windows Update: $($_.Exception.Message)" -Type "ERROR" }
         }
         default { return }
     }
-}function Sweep-OrphanedDrivers {
+}
+
+function Sweep-OrphanedDrivers {
     Write-Host "`n  ======================================================================"
-    Write-Host "               孤立驱动清理 (pnputil)"
+    Write-Host "               ORPHANED DRIVER SWEEPER (pnputil)"
     Write-Host "  ======================================================================"
-    Write-Log "正在扫描孤立的打印机驱动..." -Type "INFO"
+    Write-Log "Scanning for orphaned printer drivers..." -Type "INFO"
     try {
         $rawOutput = & pnputil /enum-drivers 2>&1
         $activeDrivers = (Get-PrinterDriver -ErrorAction SilentlyContinue).Name
@@ -1686,36 +1798,36 @@ function Manage-WindowsUpdate {
             $orphans += [PSCustomObject]@{ OemInf = $currentOem; Provider = $currentProvider }
         }
         if ($orphans.Count -gt 0) {
-            Write-Host "  [!] 在驱动程序存储中找到 $($orphans.Count) 个打印机驱动包：" -ForegroundColor Yellow
+            Write-Host "  [!] Found $($orphans.Count) printer driver package(s) in Driver Store:" -ForegroundColor Yellow
             $orphans | Format-Table OemInf, Provider -AutoSize
-            $confirm = Read-Host "  [?] 强制删除所有孤立的打印机驱动？(Y/N)"
-            if ($confirm -eq 'Y') {
+            $confirm = Read-Host "  [?] Force-delete ALL orphaned printer drivers? (Y/N)"
+            if ($confirm -match '^[yY]') {
                 foreach ($o in $orphans) {
-                    Write-Host "  [*] 正在移除 $($o.OemInf)..." -ForegroundColor Cyan
+                    Write-Host "  [*] Removing $($o.OemInf)..." -ForegroundColor Cyan
                     & pnputil /delete-driver $o.OemInf /force 2>&1 | Out-Null
                 }
-                Write-Log "孤立驱动已清除：$($orphans.Count) 个包。" -Type "SUCCESS"
-                Write-Host "  [+] 清理完成。" -ForegroundColor Green
+                Write-Log "Orphaned drivers purged: $($orphans.Count) packages." -Type "SUCCESS"
+                Write-Host "  [+] Cleanup complete." -ForegroundColor Green
             }
         }
         else {
-            Write-Host "  [+] 在驱动程序存储中未找到孤立的打印机驱动。" -ForegroundColor Green
-            Write-Log "未检测到孤立驱动。" -Type "SUCCESS"
+            Write-Host "  [+] No orphaned printer drivers found in Driver Store." -ForegroundColor Green
+            Write-Log "No orphaned drivers detected." -Type "SUCCESS"
         }
     }
-    catch { Write-Log "驱动清理失败: $($_.Exception.Message)" -Type "ERROR" }
+    catch { Write-Log "Driver sweep failed: $($_.Exception.Message)" -Type "ERROR" }
 }
 
 function Force-KillDriverProcess {
     Write-Host "`n  ======================================================================"
-    Write-Host "               绕过「驱动当前正在使用」"
+    Write-Host "               BYPASS 'DRIVER IS CURRENTLY IN USE'"
     Write-Host "  ======================================================================"
-    Write-Log "正在强制终止驱动隔离进程..." -Type "INFO"
-    Write-Host "  [!] 警告：这将终止所有正在进行的打印处理。" -ForegroundColor Red
-    $confirm = Read-Host "  [?] 继续? (Y/N)"
-    if ($confirm -ne 'Y') { return }
+    Write-Log "Force-killing driver isolation processes..." -Type "INFO"
+    Write-Host "  [!] WARNING: This will terminate all active print processing." -ForegroundColor Red
+    $confirm = Read-Host "  [?] Proceed? (Y/N)"
+    if ($confirm -notmatch '^[yY]') { return }
     try {
-        Write-Host "  [*] 正在停止打印后台处理程序..." -ForegroundColor Cyan
+        Write-Host "  [*] Stopping Print Spooler..." -ForegroundColor Cyan
         Stop-Service spooler -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 1
         $targets = @("PrintIsolationHost", "printfilterpipelinesvc", "splwow64")
@@ -1723,206 +1835,209 @@ function Force-KillDriverProcess {
             $running = Get-Process -Name $proc -ErrorAction SilentlyContinue
             if ($running) {
                 $running | Stop-Process -Force -ErrorAction SilentlyContinue
-                Write-Host "  [+] 已终止：$proc (PID: $($running.Id -join ', '))" -ForegroundColor Green
+                Write-Host "  [+] Terminated: $proc (PID: $($running.Id -join ', '))" -ForegroundColor Green
             }
             else {
-                Write-Host "  [*] $proc 未运行。" -ForegroundColor Cyan
+                Write-Host "  [*] $proc not running." -ForegroundColor Cyan
             }
         }
         Start-Sleep -Seconds 2
         Start-Service spooler -ErrorAction SilentlyContinue
-        Write-Log "驱动句柄已释放。后台处理程序已重启。" -Type "SUCCESS"
-        Write-Host "  [+] 所有驱动句柄已释放。您现在可以卸载驱动程序。" -ForegroundColor Green
+        Write-Log "Driver handles released. Spooler restarted." -Type "SUCCESS"
+        Write-Host "  [+] All driver handles released. You may now uninstall drivers." -ForegroundColor Green
     }
-    catch { Write-Log "强制终止失败: $($_.Exception.Message)" -Type "ERROR" }
+    catch { Write-Log "Force-kill failed: $($_.Exception.Message)" -Type "ERROR" }
 }
 
 function Convert-WSDtoTCPIP {
     Write-Host "`n  ======================================================================"
-    Write-Host "               WSD 到标准 TCP/IP 端口转换器"
+    Write-Host "               WSD to STANDARD TCP/IP PORT CONVERTER"
     Write-Host "  ======================================================================"
-    Write-Log "正在扫描 WSD 端口..." -Type "INFO"
+    Write-Log "Scanning for WSD ports..." -Type "INFO"
     try {
         $wsdPorts = Get-PrinterPort -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "WSD-*" }
         if (-not $wsdPorts) {
-            Write-Host "  [+] 未检测到 WSD 端口。所有端口均稳定。" -ForegroundColor Green
-            Write-Log "未找到 WSD 端口。" -Type "SUCCESS"
+            Write-Host "  [+] No WSD ports detected. All ports are stable." -ForegroundColor Green
+            Write-Log "No WSD ports found." -Type "SUCCESS"
             return
         }
-        Write-Host "  [!] 找到 $($wsdPorts.Count) 个 WSD 端口：" -ForegroundColor Yellow
+        Write-Host "  [!] Found $($wsdPorts.Count) WSD port(s):" -ForegroundColor Yellow
         foreach ($wp in $wsdPorts) {
             $printerOnPort = Get-Printer -ErrorAction SilentlyContinue | Where-Object { $_.PortName -eq $wp.Name }
-            $printerName = if ($printerOnPort) { $printerOnPort.Name } else { "(未分配)" }
-            Write-Host "      端口：$($wp.Name) | 打印机：$printerName" -ForegroundColor Cyan
+            $printerName = if ($printerOnPort) { $printerOnPort.Name } else { "(unassigned)" }
+            Write-Host "      Port: $($wp.Name) | Printer: $printerName" -ForegroundColor Cyan
         }
-        $ip = Read-Host "`n  [?] 输入 WSD 打印机的实际 IP（例如 192.168.1.100）"
+        $ip = Read-Host "`n  [?] Input the actual IP of the WSD printer (e.g., 192.168.1.100)"
         if (-not $ip) { return }
         $newPortName = "IP_$ip"
         if (-not (Get-PrinterPort -Name $newPortName -ErrorAction SilentlyContinue)) {
             Add-PrinterPort -Name $newPortName -PrinterHostAddress $ip -ErrorAction Stop
-            Write-Host "  [+] TCP/IP 端口 $newPortName 已创建。" -ForegroundColor Green
+            Write-Host "  [+] TCP/IP Port $newPortName created." -ForegroundColor Green
         }
         $printerToMove = Get-Printer -ErrorAction SilentlyContinue | Where-Object { $_.PortName -like "WSD-*" } | Select-Object -First 1
         if ($printerToMove) {
             Set-Printer -Name $printerToMove.Name -PortName $newPortName -ErrorAction Stop
-            Write-Log "打印机 $($printerToMove.Name) 已从 WSD 迁移到 TCP/IP ($ip)。" -Type "SUCCESS"
-            Write-Host "  [+] $($printerToMove.Name) 已迁移到 $newPortName。" -ForegroundColor Green
+            Write-Log "Printer $($printerToMove.Name) migrated from WSD to TCP/IP ($ip)." -Type "SUCCESS"
+            Write-Host "  [+] $($printerToMove.Name) migrated to $newPortName." -ForegroundColor Green
         }
     }
-    catch { Write-Log "WSD 转换失败: $($_.Exception.Message)" -Type "ERROR" }
+    catch { Write-Log "WSD conversion failed: $($_.Exception.Message)" -Type "ERROR" }
 }
 
 function Reset-NetworkSockets {
     Write-Host "`n  ======================================================================"
-    Write-Host "               网络套接字重新初始化（选择性清理）"
+    Write-Host "               NETWORK SOCKET RE-INIT (SELECTIVE PURGE)"
     Write-Host "  ======================================================================"
-    Write-Log "正在执行选择性网络套接字清理..." -Type "INFO"
+    Write-Log "Performing selective network socket cleanup..." -Type "INFO"
     try {
-        Write-Host "  [*] 正在扫描卡住的 SMB/RPC 连接..." -ForegroundColor Cyan
+        Write-Host "  [*] Scanning for stuck SMB/RPC connections..." -ForegroundColor Cyan
         $stuck445 = & netstat -ano 2>&1 | Select-String ":445\s.*(ESTABLISHED|TIME_WAIT|CLOSE_WAIT)"
         $stuck135 = & netstat -ano 2>&1 | Select-String ":135\s.*(ESTABLISHED|TIME_WAIT|CLOSE_WAIT)"
         $totalStuck = 0
-        if ($stuck445) { $totalStuck += $stuck445.Count; Write-Host "  [!] 端口 445 (SMB)：$($stuck445.Count) 个卡住连接" -ForegroundColor Yellow }
-        if ($stuck135) { $totalStuck += $stuck135.Count; Write-Host "  [!] 端口 135 (RPC)：$($stuck135.Count) 个卡住连接" -ForegroundColor Yellow }
-        if ($totalStuck -eq 0) { Write-Host "  [+] 未检测到卡住的连接。" -ForegroundColor Green }
-        Write-Host "  [*] 仅重启 SMB 客户端和服务器服务..." -ForegroundColor Cyan
+        if ($stuck445) { $totalStuck += $stuck445.Count; Write-Host "  [!] Port 445 (SMB): $($stuck445.Count) stuck connections" -ForegroundColor Yellow }
+        if ($stuck135) { $totalStuck += $stuck135.Count; Write-Host "  [!] Port 135 (RPC): $($stuck135.Count) stuck connections" -ForegroundColor Yellow }
+        if ($totalStuck -eq 0) { Write-Host "  [+] No stuck connections detected." -ForegroundColor Green }
+        Write-Host "  [*] Restarting SMB Client & Server services only..." -ForegroundColor Cyan
         Restart-Service LanmanWorkstation -Force -ErrorAction SilentlyContinue
         Restart-Service LanmanServer -Force -ErrorAction SilentlyContinue
         $LASTEXITCODE = 0; ipconfig /registerdns > $null 2>&1
-        Write-Log "网络套接字已选择性清除。已清理 $totalStuck 个连接。" -Type "SUCCESS"
-        Write-Host "  [+] 套接字清理完成。已清除 $totalStuck 个过期连接。" -ForegroundColor Green
+        Write-Log "Network sockets selectively purged. $totalStuck connections cleared." -Type "SUCCESS"
+        Write-Host "  [+] Socket cleanup complete. $totalStuck stale connections purged." -ForegroundColor Green
     }
-    catch { Write-Log "套接字重新初始化失败: $($_.Exception.Message)" -Type "ERROR" }
+    catch { Write-Log "Socket re-init failed: $($_.Exception.Message)" -Type "ERROR" }
 }
 
 function Rescue-NetworkProfile {
     Write-Host "`n  ======================================================================"
-    Write-Host "               恢复网络配置文件（自动检测与监视）"
+    Write-Host "               RESCUE NETWORK PROFILE (AUTO-DETECT & WATCHDOG)"
     Write-Host "  ======================================================================"
-    Write-Log "正在恢复网络配置文件..." -Type "INFO"
+    Write-Log "Rescuing network profile..." -Type "INFO"
     try {
         $profiles = Get-NetConnectionProfile -ErrorAction SilentlyContinue
         $publicFound = $false
         foreach ($p in $profiles) {
             if ($p.NetworkCategory -eq 'Public') {
                 $publicFound = $true
-                Write-Host "  [!] 检测到公用配置文件：$($p.InterfaceAlias)" -ForegroundColor Red
+                Write-Host "  [!] Public profile detected on: $($p.InterfaceAlias)" -ForegroundColor Red
                 Set-NetConnectionProfile -InterfaceAlias $p.InterfaceAlias -NetworkCategory Private -ErrorAction SilentlyContinue
-                Write-Host "  [+] 已强制设为专用：$($p.InterfaceAlias)" -ForegroundColor Green
+                Write-Host "  [+] Forced to Private: $($p.InterfaceAlias)" -ForegroundColor Green
             }
         }
-        if (-not $publicFound) { Write-Host "  [+] 所有配置文件均已是专用/域。无需操作。" -ForegroundColor Green }
-        $deployWatchdog = Read-Host "`n  [?] 部署网络配置文件监视任务（每 10 分钟检查一次）？(Y/N)"
-        if ($deployWatchdog -eq 'Y') {
+        if (-not $publicFound) { Write-Host "  [+] All profiles are already Private/Domain. No action needed." -ForegroundColor Green }
+        $deployWatchdog = Read-Host "`n  [?] Deploy Network Profile Watchdog (checks every 10 min)? (Y/N)"
+        if ($deployWatchdog -match '^[yY]') {
             $cmd = "powershell.exe -WindowStyle Hidden -Command \`"Get-NetConnectionProfile | Where-Object { `$_.NetworkCategory -eq 'Public' } | Set-NetConnectionProfile -NetworkCategory Private\`""
             & schtasks.exe /create /tn "NetworkProfileWatchdog" /tr $cmd /sc minute /mo 10 /ru "SYSTEM" /rl HIGHEST /f > $null 2>&1
             if ($LASTEXITCODE -eq 0) {
+                # Configure task to run on battery power (disables 0x800710E0 error on laptops)
                 try {
                     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
                     Set-ScheduledTask -TaskName "NetworkProfileWatchdog" -Settings $settings -ErrorAction SilentlyContinue | Out-Null
                 } catch {}
-                Write-Log "网络配置文件监视已部署（无限制重复）。" -Type "SUCCESS"
-                Write-Host "  [+] 监视已部署。每 10 分钟强制配置文件为专用。" -ForegroundColor Green
+                Write-Log "Network Profile Watchdog deployed (indefinite repetition)." -Type "SUCCESS"
+                Write-Host "  [+] Watchdog deployed. Profile enforced to Private every 10 minutes." -ForegroundColor Green
             } else {
-                Write-Log "部署网络配置文件监视失败。schtasks 返回退出代码 $LASTEXITCODE" -Type "ERROR"
+                Write-Log "Failed to deploy Network Profile Watchdog. schtasks returned exit code $LASTEXITCODE" -Type "ERROR"
             }
         }
     }
-    catch { Write-Log "网络恢复失败: $($_.Exception.Message)" -Type "ERROR" }
+    catch { Write-Log "Network rescue failed: $($_.Exception.Message)" -Type "ERROR" }
 }
 
 function Remove-GhostUSBPrinters {
     Write-Host "`n  ======================================================================"
-    Write-Host "               幽灵 USB 端口与副本清除器"
+    Write-Host "               GHOST USB PORT & COPY ELIMINATOR"
     Write-Host "  ======================================================================"
-    Write-Log "正在扫描幽灵 USB 打印机和重复项..." -Type "INFO"
+    Write-Log "Scanning for ghost USB printers and duplicates..." -Type "INFO"
     try {
-        $allPrinters = Get-Printer -ErrorAction SilentlyContinue
-        $ghosts = $allPrinters | Where-Object { $_.Name -match '\(Copy \d+\)' -or $_.Name -match ' - Copy' -or $_.Name -match 'Copy \d+$' }
-        $activePorts = ($allPrinters | Where-Object { $_.Name -notmatch 'Copy' }).PortName
-        $deadUSB = Get-PrinterPort -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "USB*" -and $_.Name -notin $activePorts }
+        $allPrinters = @(Get-Printer -ErrorAction SilentlyContinue)
+        $ghosts = @($allPrinters | Where-Object { $_.Name -match '\(Copy \d+\)' -or $_.Name -match ' - Copy' -or $_.Name -match 'Copy \d+$' })
+        $activePorts = @(($allPrinters | Where-Object { $_.Name -notmatch 'Copy' }).PortName)
+        $deadUSB = @(Get-PrinterPort -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "USB*" -and $_.Name -notin $activePorts })
         if ($ghosts.Count -eq 0 -and $deadUSB.Count -eq 0) {
-            Write-Host "  [+] 未检测到幽灵打印机或失效 USB 端口。" -ForegroundColor Green
-            Write-Log "未找到幽灵设备。" -Type "SUCCESS"
+            Write-Host "  [+] No ghost printers or dead USB ports detected." -ForegroundColor Green
+            Write-Log "No ghost devices found." -Type "SUCCESS"
             return
         }
         if ($ghosts.Count -gt 0) {
-            Write-Host "  [!] 找到重复/幽灵打印机：" -ForegroundColor Yellow
-            foreach ($g in $ghosts) { Write-Host "      - $($g.Name) [端口：$($g.PortName)]" -ForegroundColor Red }
+            Write-Host "  [!] Duplicate/Ghost printers found:" -ForegroundColor Yellow
+            foreach ($g in $ghosts) { Write-Host "      - $($g.Name) [Port: $($g.PortName)]" -ForegroundColor Red }
         }
         if ($deadUSB.Count -gt 0) {
-            Write-Host "  [!] 找到失效 USB 端口：" -ForegroundColor Yellow
+            Write-Host "  [!] Dead USB ports found:" -ForegroundColor Yellow
             foreach ($u in $deadUSB) { Write-Host "      - $($u.Name)" -ForegroundColor Red }
         }
-        $confirm = Read-Host "`n  [?] 移除所有幽灵打印机和失效 USB 端口？(Y/N)"
-        if ($confirm -eq 'Y') {
+        $confirm = Read-Host "`n  [?] Remove all ghost printers and dead USB ports? (Y/N)"
+        if ($confirm -match '^[yY]') {
             foreach ($g in $ghosts) {
                 Remove-Printer -Name $g.Name -ErrorAction SilentlyContinue
-                Write-Host "  [+] 已移除打印机：$($g.Name)" -ForegroundColor Green
+                Write-Host "  [+] Removed printer: $($g.Name)" -ForegroundColor Green
             }
             foreach ($u in $deadUSB) {
                 Remove-PrinterPort -Name $u.Name -ErrorAction SilentlyContinue
-                Write-Host "  [+] 已移除端口：$($u.Name)" -ForegroundColor Green
+                Write-Host "  [+] Removed port: $($u.Name)" -ForegroundColor Green
             }
-            Write-Log "幽灵清理：已移除 $($ghosts.Count) 台打印机、$($deadUSB.Count) 个端口。" -Type "SUCCESS"
+            Write-Log "Ghost cleanup: $($ghosts.Count) printers, $($deadUSB.Count) ports removed." -Type "SUCCESS"
         }
     }
-    catch { Write-Log "幽灵 USB 清理失败: $($_.Exception.Message)" -Type "ERROR" }
+    catch { Write-Log "Ghost USB cleanup failed: $($_.Exception.Message)" -Type "ERROR" }
 }
 
 function Nuke-PrintQueue {
-    Write-Log "正在对打印队列执行强制清除..." -Type "INFO"
+    Write-Log "Executing Force Purge on Print Queue..." -Type "INFO"
     Write-Host "`n  ======================================================================"
-    Write-Host "                强制清除打印队列"
+    Write-Host "                FORCE PURGE PRINT QUEUE"
     Write-Host "  ======================================================================"
     try {
-        Write-Host "  [*] 正在终止打印后台处理程序和所有子进程..." -ForegroundColor Cyan
+        Write-Host "  [*] Terminating Print Spooler and all child processes..." -ForegroundColor Cyan
         Stop-Service spooler -Force -ErrorAction SilentlyContinue
         Start-Sleep -Milliseconds 500
         Get-Process -Name "PrintIsolationHost", "printfilterpipelinesvc", "splwow64" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 1
         $spoolDir = "$env:SystemRoot\System32\Spool\Printers"
+        if (-not (Test-Path $spoolDir)) { New-Item -ItemType Directory -Path $spoolDir -Force | Out-Null }
         $shdFiles = Get-ChildItem "$spoolDir\*.shd" -ErrorAction SilentlyContinue
         $splFiles = Get-ChildItem "$spoolDir\*.spl" -ErrorAction SilentlyContinue
         $totalFiles = 0
         if ($shdFiles) { $totalFiles += $shdFiles.Count; Remove-Item "$spoolDir\*.shd" -Force -ErrorAction SilentlyContinue }
         if ($splFiles) { $totalFiles += $splFiles.Count; Remove-Item "$spoolDir\*.spl" -Force -ErrorAction SilentlyContinue }
         Remove-Item "$spoolDir\*" -Force -Recurse -ErrorAction SilentlyContinue
+        if (-not (Test-Path $spoolDir)) { New-Item -ItemType Directory -Path $spoolDir -Force | Out-Null }
         Start-Sleep -Seconds 1
         Start-Service spooler -ErrorAction Stop
-        Write-Log "强制清除完成。已清除 $totalFiles 个损坏的后台文件。" -Type "SUCCESS"
-        Write-Host "  [+] 打印队列已清除。已清除 $totalFiles 个过期文件。后台处理程序已重启。" -ForegroundColor Green
+        Write-Log "Force Purge complete. $totalFiles corrupt spool files cleared." -Type "SUCCESS"
+        Write-Host "  [+] Print Queue cleared. $totalFiles stale files purged. Spooler restarted." -ForegroundColor Green
     }
-    catch { Write-Log "强制清除失败: $($_.Exception.Message)" -Type "ERROR" }
+    catch { Write-Log "Force Purge failed: $($_.Exception.Message)" -Type "ERROR" }
 }
 
 function Reset-SpoolerDependencyRegistry {
-    Write-Log "正在通过直接注册表写入重置后台处理程序 DependOnService..." -Type "INFO"
+    Write-Log "Resetting Spooler DependOnService via direct registry write..." -Type "INFO"
     try {
         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Spooler"
         $current = (Get-ItemProperty $regPath -ErrorAction SilentlyContinue).DependOnService
         if ($current) {
-            Write-Host "  [*] 当前依赖项：$($current -join ', ')" -ForegroundColor Yellow
+            Write-Host "  [*] Current dependencies: $($current -join ', ')" -ForegroundColor Yellow
         }
         Set-ItemProperty -Path $regPath -Name DependOnService -Value @("RPCSS","http") -Type MultiString -Force -ErrorAction Stop
-        Write-Log "后台处理程序 DependOnService 已重置为出厂默认值 (RPCSS, http)。" -Type "SUCCESS"
-        Write-Host "  [+] 后台处理程序依赖项已重置为：RPCSS, http" -ForegroundColor Green
-        Write-Host "  [*] 正在重启后台处理程序以应用..." -ForegroundColor Cyan
+        Write-Log "Spooler DependOnService reset to factory defaults (RPCSS, http)." -Type "SUCCESS"
+        Write-Host "  [+] Spooler dependencies reset to: RPCSS, http" -ForegroundColor Green
+        Write-Host "  [*] Restarting Spooler to apply..." -ForegroundColor Cyan
         Restart-Service spooler -Force -ErrorAction SilentlyContinue
     }
-    catch { Write-Log "依赖项注册表重置失败: $($_.Exception.Message)" -Type "ERROR" }
+    catch { Write-Log "Dependency registry reset failed: $($_.Exception.Message)" -Type "ERROR" }
 }
 
 function Inject-CrossUserCredentials {
     Write-Host "`n  ======================================================================"
-    Write-Host "               跨用户凭据映射"
+    Write-Host "               CROSS-USER CREDENTIAL MAPPING"
     Write-Host "  ======================================================================"
-    Write-Host "  [!] 警告：这会将凭据注入此电脑上的所有用户配置文件。" -ForegroundColor Red
-    Write-Log "跨用户凭据映射已启动..." -Type "INFO"
-    $ip = Read-Host "  [?] 目标 IP/主机名（例如 192.168.1.10）"
-    $usr = Read-Host "  [?] 目标主机上的用户名"
-    $pass = Read-Host "  [?] 目标主机上的密码（明文显示）"
-    if (-not $ip -or -not $usr) { Write-Host "  [-] 已取消。" -ForegroundColor Red; return }
+    Write-Host "  [!] WARNING: This injects credentials into ALL user profiles on this PC." -ForegroundColor Red
+    Write-Log "Cross-User Credential Mapping initiated..." -Type "INFO"
+    $ip = Read-Host "  [?] Target IP/Hostname (e.g., 192.168.1.10)"
+    $usr = Read-Host "  [?] Username on Target Host"
+    $pass = Read-Host "  [?] Password on Target Host (Visible Text)"
+    if (-not $ip -or -not $usr) { Write-Host "  [-] Cancelled." -ForegroundColor Red; return }
     try {
         $profiles = Get-ChildItem "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList" -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^S-1-5-21-' }
         $injected = 0
@@ -1930,23 +2045,27 @@ function Inject-CrossUserCredentials {
             $sid = $profile.PSChildName
             $profilePath = (Get-ItemProperty $profile.PSPath -ErrorAction SilentlyContinue).ProfileImagePath
             $userName = Split-Path $profilePath -Leaf
-            Write-Host "  [*] 正在为用户注入凭据：$userName ($sid)..." -ForegroundColor Cyan
+            Write-Host "  [*] Injecting credential for user: $userName ($sid)..." -ForegroundColor Cyan
             $ntuser = Join-Path $profilePath "NTUSER.DAT"
             if (Test-Path $ntuser) {
-                $LASTEXITCODE = 0; & reg load "HKU\$sid" $ntuser > $null 2>&1
+                $LASTEXITCODE = 0; & reg load "HKU\$sid" "$ntuser" > $null 2>&1
                 if ($LASTEXITCODE -eq 0) {
                     try {
+                        # Create self-deleting cmd script with credential command
                         $credScript = Join-Path $profilePath "PrinterCredFix.cmd"
                         $cmdContent = "@echo off`r`ncmdkey.exe /add:$ip /user:$usr /pass:`"$pass`"`r`ndel `"%~f0`""
                         Set-Content -Path $credScript -Value $cmdContent -Encoding ASCII -Force -ErrorAction Stop
 
+                        # Inject RunOnce to execute the script (script self-deletes after running)
                         $runOncePath = "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\RunOnce"
+                        if (-not (Test-Path $runOncePath)) { New-Item -Path $runOncePath -Force | Out-Null }
                         Set-ItemProperty -Path $runOncePath -Name "PrinterCredFix" -Value "`"$credScript`"" -Force -ErrorAction Stop
-                        Write-Log "已为 $userName 注入 RunOnce 凭据命令。" -Type "SUCCESS"
+                        Write-Log "Injected RunOnce credential command for $userName." -Type "SUCCESS"
                     } catch {
-                        Write-Log "为 ${userName} 写入 RunOnce 注册表失败: $($_.Exception.Message)" -Type "ERROR"
+                        Write-Log "Failed to write RunOnce registry for ${userName}: $($_.Exception.Message)" -Type "ERROR"
                     }
                     
+                    # Retry loop to unload registry safely
                     $unloaded = $false
                     for ($retry = 1; $retry -le 5; $retry++) {
                         $LASTEXITCODE = 0
@@ -1958,54 +2077,57 @@ function Inject-CrossUserCredentials {
                         Start-Sleep -Milliseconds 200
                     }
                     if (-not $unloaded) {
-                        Write-Log "尝试 5 次后仍无法卸载 $userName ($sid) 的注册表配置单元。" -Type "WARNING"
+                        Write-Log "Failed to unload registry hive for $userName ($sid) after 5 attempts." -Type "WARNING"
                     }
                     $injected++
                 } else {
-                    Write-Log "无法加载 $userName ($sid) 的注册表配置单元。" -Type "ERROR"
+                    Write-Log "Failed to load registry hive for $userName ($sid)." -Type "ERROR"
                 }
             }
         }
-        Write-Log "已为 $injected 个用户配置文件注入凭据。" -Type "SUCCESS"
-        Write-Host "  [+] 已向 $injected 个用户配置文件注入凭据。" -ForegroundColor Green
+        Write-Log "Credentials injected for $injected user profiles." -Type "SUCCESS"
+        Write-Host "  [+] Credentials injected into $injected user profiles." -ForegroundColor Green
         $pass = ""
     }
-    catch { Write-Log "跨用户凭据注入失败: $($_.Exception.Message)" -Type "ERROR" }
-}function Force-DefaultPrinterRegistry {
+    catch { Write-Log "Cross-user credential injection failed: $($_.Exception.Message)" -Type "ERROR" }
+}
+
+function Force-DefaultPrinterRegistry {
     Write-Host "`n  ======================================================================"
-    Write-Host "               强制设置默认打印机（注册表绕过 0x00000709）"
+    Write-Host "               FORCE-SET DEFAULT PRINTER (REGISTRY BYPASS 0x00000709)"
     Write-Host "  ======================================================================"
-    Write-Log "正在通过注册表注入强制设置默认打印机..." -Type "INFO"
+    Write-Log "Force-setting default printer via registry injection..." -Type "INFO"
     try {
-        Set-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows" -Name LegacyDefaultPrinterMode -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-        $printers = Get-Printer -ErrorAction Stop
-        if (-not $printers) { Write-Host "  [-] 未找到打印机。" -ForegroundColor Red; return }
+        $regWin = "HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows"
+        Set-ItemProperty -Path $regWin -Name LegacyDefaultPrinterMode -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+        $printers = @(Get-Printer -ErrorAction Stop)
+        if (-not $printers -or $printers.Count -eq 0) { Write-Host "  [-] No printers found." -ForegroundColor Red; return }
         $idx = 1
         foreach ($p in $printers) {
-            Write-Host "  [$idx] $($p.Name) | 端口：$($p.PortName)" -ForegroundColor Cyan
+            Write-Host "  [$idx] $($p.Name) | Port: $($p.PortName)" -ForegroundColor Cyan
             $idx++
         }
-        $sel = Read-Host "`n  [?] 选择要强制设为默认的打印机编号"
+        $sel = Read-Host "`n  [?] Select printer number to force as default"
         $selIdx = -1
-        try { $selIdx = [int]$sel - 1 } catch { Write-Host "  [-] 输入无效。" -ForegroundColor Red; return }
-        if ($selIdx -lt 0 -or $selIdx -ge $printers.Count) { Write-Host "  [-] 选择无效。" -ForegroundColor Red; return }
+        try { $selIdx = [int]$sel - 1 } catch { Write-Host "  [-] Invalid input." -ForegroundColor Red; return }
+        if ($selIdx -lt 0 -or $selIdx -ge $printers.Count) { Write-Host "  [-] Invalid selection." -ForegroundColor Red; return }
         $target = $printers[$selIdx]
         $deviceStr = "$($target.Name),winspool,$($target.PortName):"
-        Set-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows" -Name Device -Value $deviceStr -Type String -Force -ErrorAction Stop
-        Write-Log "已通过注册表强制设置默认打印机：$($target.Name)" -Type "SUCCESS"
-        Write-Host "  [+] 默认打印机已设为：$($target.Name)（已应用注册表绕过）。" -ForegroundColor Green
+        Set-ItemProperty -Path $regWin -Name Device -Value $deviceStr -Type String -Force -ErrorAction Stop
+        Write-Log "Default printer forced via registry: $($target.Name)" -Type "SUCCESS"
+        Write-Host "  [+] Default printer set to: $($target.Name) (Registry bypass applied)." -ForegroundColor Green
     }
-    catch { Write-Log "注册表默认打印机设置失败: $($_.Exception.Message)" -Type "ERROR" }
+    catch { Write-Log "Registry default printer failed: $($_.Exception.Message)" -Type "ERROR" }
 }
 
 function Sanitize-PrinterShareName {
-    Write-Log "正在扫描不合规的打印机共享名称..." -Type "INFO"
+    Write-Log "Scanning for unsanitary printer share names..." -Type "INFO"
     Write-Host "`n  ======================================================================"
-    Write-Host "               自动清理打印机共享名称"
+    Write-Host "               AUTO-SANITIZE PRINTER SHARE NAME"
     Write-Host "  ======================================================================"
     try {
         $shared = Get-Printer -ErrorAction SilentlyContinue | Where-Object { $_.Shared -eq $true }
-        if (-not $shared) { Write-Host "  [+] 未找到共享打印机。" -ForegroundColor Yellow; return }
+        if (-not $shared) { Write-Host "  [+] No shared printers found." -ForegroundColor Yellow; return }
         $fixed = 0
         foreach ($p in $shared) {
             $original = $p.ShareName
@@ -2016,28 +2138,28 @@ function Sanitize-PrinterShareName {
                 $fixed++
             }
             else {
-                Write-Host "  [+] $original (干净)" -ForegroundColor Green
+                Write-Host "  [+] $original (clean)" -ForegroundColor Green
             }
         }
         if ($fixed -gt 0) {
-            Write-Log "已清理 $fixed 个打印机共享名称。" -Type "SUCCESS"
-            Write-Host "`n  [+] $fixed 个共享名称已清理。" -ForegroundColor Green
+            Write-Log "Sanitized $fixed printer share names." -Type "SUCCESS"
+            Write-Host "`n  [+] $fixed share name(s) sanitized." -ForegroundColor Green
         }
         else {
-            Write-Host "`n  [+] 所有共享名称均已合规。" -ForegroundColor Green
-            Write-Log "所有共享名称均合规。" -Type "SUCCESS"
+            Write-Host "`n  [+] All share names are already clean." -ForegroundColor Green
+            Write-Log "All share names clean." -Type "SUCCESS"
         }
     }
-    catch { Write-Log "共享名称清理失败: $($_.Exception.Message)" -Type "ERROR" }
+    catch { Write-Log "Share name sanitization failed: $($_.Exception.Message)" -Type "ERROR" }
 }
 
 function Fix-BrowserPrintSandbox {
-    Write-Log "正在重置浏览器打印沙箱 (Chromium)..." -Type "INFO"
+    Write-Log "Resetting browser print sandbox (Chromium)..." -Type "INFO"
     Write-Host "`n  ======================================================================"
-    Write-Host "               浏览器打印沙箱修复 (Chromium)"
+    Write-Host "               BROWSER PRINT SANDBOX FIX (CHROMIUM)"
     Write-Host "  ======================================================================"
     try {
-        Write-Host "  [*] 正在终止浏览器进程..." -ForegroundColor Cyan
+        Write-Host "  [*] Terminating browser processes..." -ForegroundColor Cyan
         Get-Process -Name "chrome", "msedge" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
         $cleared = 0
@@ -2045,25 +2167,25 @@ function Fix-BrowserPrintSandbox {
         $edgePrintDir = "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Cache"
         if (Test-Path $chromePrintDir) {
             Remove-Item "$chromePrintDir\*" -Force -Recurse -ErrorAction SilentlyContinue
-            $cleared++; Write-Host "  [+] Chrome 缓存已清除。" -ForegroundColor Green
+            $cleared++; Write-Host "  [+] Chrome cache cleared." -ForegroundColor Green
         }
         if (Test-Path $edgePrintDir) {
             Remove-Item "$edgePrintDir\*" -Force -Recurse -ErrorAction SilentlyContinue
-            $cleared++; Write-Host "  [+] Edge 缓存已清除。" -ForegroundColor Green
+            $cleared++; Write-Host "  [+] Edge cache cleared." -ForegroundColor Green
         }
         & CheckNetIsolation.exe LoopbackExempt -a -n="microsoft.windows.printdialog_cw5n1h2txyewy" 2>&1 | Out-Null
         & CheckNetIsolation.exe LoopbackExempt -a -n="microsoft.microsoftedge_8wekyb3d8bbwe" 2>&1 | Out-Null
         Restart-Service spooler -Force -ErrorAction SilentlyContinue
-        Write-Log "浏览器打印沙箱已重置。已清除 $cleared 个浏览器缓存。" -Type "SUCCESS"
-        Write-Host "  [+] 浏览器打印沙箱重置完成。请重启浏览器。" -ForegroundColor Green
+        Write-Log "Browser print sandbox reset. $cleared browser cache(s) cleared." -Type "SUCCESS"
+        Write-Host "  [+] Browser print sandbox reset complete. Restart your browser." -ForegroundColor Green
     }
-    catch { Write-Log "浏览器沙箱修复失败: $($_.Exception.Message)" -Type "ERROR" }
+    catch { Write-Log "Browser sandbox fix failed: $($_.Exception.Message)" -Type "ERROR" }
 }
 
 function Detect-GPOIntervention {
-    Write-Log "正在扫描组策略对打印机注册表的干预..." -Type "INFO"
+    Write-Log "Scanning for Group Policy intervention on printer registry..." -Type "INFO"
     Write-Host "`n  ======================================================================"
-    Write-Host "               组策略 (GPO) 干预检测"
+    Write-Host "               GROUP POLICY (GPO) INTERVENTION DETECTION"
     Write-Host "  ======================================================================"
     try {
         $isPartOfDomain = $false
@@ -2078,19 +2200,19 @@ function Detect-GPOIntervention {
         }
 
         if ($isPartOfDomain) {
-            Write-Host "  [+] 域状态：已加入域" -ForegroundColor Green
+            Write-Host "  [+] Domain status: DOMAIN JOINED" -ForegroundColor Green
         } else {
-            Write-Host "  [+] 域状态：工作组（未加入域）" -ForegroundColor Green
+            Write-Host "  [+] Domain status: WORKGROUP (Not Domain Joined)" -ForegroundColor Green
         }
 
         $policyPaths = @(
-            @{ Path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers"; Label = "打印机策略" },
-            @{ Path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint"; Label = "即插即用" },
-            @{ Path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC"; Label = "RPC 策略" },
-            @{ Path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\WPP"; Label = "Windows 受保护打印" },
-            @{ Path = "HKCU:\SOFTWARE\Policies\Microsoft\Windows NT\Printers"; Label = "用户打印机策略" },
-            @{ Path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\LanmanWorkstation"; Label = "Lanman 工作站策略" },
-            @{ Path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\LanmanServer"; Label = "Lanman 服务器策略" }
+            @{ Path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers"; Label = "Printer Policies" },
+            @{ Path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint"; Label = "Point and Print" },
+            @{ Path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\RPC"; Label = "RPC Policies" },
+            @{ Path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\WPP"; Label = "Windows Protected Print" },
+            @{ Path = "HKCU:\SOFTWARE\Policies\Microsoft\Windows NT\Printers"; Label = "User Printer Policies" },
+            @{ Path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\LanmanWorkstation"; Label = "Lanman Workstation Policies" },
+            @{ Path = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\LanmanServer"; Label = "Lanman Server Policies" }
         )
 
         $recommendations = @{
@@ -2124,20 +2246,20 @@ function Detect-GPOIntervention {
                 $propNames = $props.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' }
                 if ($propNames.Count -gt 0) {
                     $gpoDetected = $true
-                    Write-Host "`n  [*] 路径：$($entry.Label)" -ForegroundColor Cyan
+                    Write-Host "`n  [*] Path: $($entry.Label)" -ForegroundColor Cyan
                     foreach ($prop in $propNames) {
                         $pName = $prop.Name
                         $pValue = $prop.Value
                         if ($recommendations.ContainsKey($pName)) {
                             $recVal = $recommendations[$pName]
                             if ($pValue.ToString() -eq $recVal.ToString()) {
-                                Write-Host "      [已修复] $pName = $pValue" -ForegroundColor Green
+                                Write-Host "      [Active Fix] $pName = $pValue" -ForegroundColor Green
                             } else {
                                 $restrictionDetected = $true
-                                Write-Host "      [!] 策略覆盖（受限）：$pName = $pValue（应为：$recVal）" -ForegroundColor Red
+                                Write-Host "      [!] Policy Override (Restricted): $pName = $pValue (Should be: $recVal)" -ForegroundColor Red
                             }
                         } else {
-                            Write-Host "      [*] 用户覆盖：$pName = $pValue" -ForegroundColor Yellow
+                            Write-Host "      [*] User Override: $pName = $pValue" -ForegroundColor Yellow
                         }
                     }
                 }
@@ -2145,41 +2267,41 @@ function Detect-GPOIntervention {
         }
 
         if ($isPartOfDomain) {
-            Write-Host "`n  [*] 正在运行 gpresult 查找打印机相关 GPO..." -ForegroundColor Cyan
+            Write-Host "`n  [*] Running gpresult for printer-related GPOs..." -ForegroundColor Cyan
             $gpresult = & gpresult /R /Scope Computer 2>&1 | Select-String -Pattern "Printer|Print|Point"
             if ($gpresult) {
-                Write-Host "  [!] 在计算机策略中找到 GPO 引用：" -ForegroundColor Yellow
+                Write-Host "  [!] GPO references found in Computer Policy:" -ForegroundColor Yellow
                 $gpresult | ForEach-Object { Write-Host "      $_" -ForegroundColor Cyan }
             } else {
-                Write-Host "  [+] 未通过 gpresult 检测到活动的打印机相关 GPO。" -ForegroundColor Green
+                Write-Host "  [+] No active printer-related GPOs detected via gpresult." -ForegroundColor Green
             }
 
             if ($restrictionDetected) {
-                Write-Host "`n  [!] 警告：GPO 管理的键将被域控制器覆盖。" -ForegroundColor Red
-                Write-Host "  [!] 对这些键的本地更改将在 gpupdate 后还原。" -ForegroundColor Red
-                Write-Log "检测到 GPO 对打印机注册表进行干预。" -Type "WARNING"
+                Write-Host "`n  [!] WARNING: GPO-managed keys will be OVERWRITTEN by Domain Controller." -ForegroundColor Red
+                Write-Host "  [!] Local changes to these keys will revert after gpupdate." -ForegroundColor Red
+                Write-Log "GPO intervention detected on printer registry." -Type "WARNING"
             } else {
-                Write-Host "`n  [+] GPO 策略与打印机共享修复一致或未激活。" -ForegroundColor Green
-                Write-Log "GPO 已检查；策略一致。" -Type "SUCCESS"
+                Write-Host "`n  [+] GPO policies are aligned with printer sharing fixes or inactive." -ForegroundColor Green
+                Write-Log "GPO checked; policies are aligned." -Type "SUCCESS"
             }
         } else {
-            Write-Host "`n  [+] 本地工作组环境（未检测到活动域控制器）。" -ForegroundColor Green
+            Write-Host "`n  [+] Local Workgroup environment (no active Domain Controller detected)." -ForegroundColor Green
             if ($restrictionDetected) {
-                Write-Host "  [!] 某些本地策略覆盖正在限制共享。可在本地调整。" -ForegroundColor Yellow
-                Write-Log "检测到本地策略限制。" -Type "WARNING"
+                Write-Host "  [!] Some local policy overrides are restricting sharing. These can be adjusted locally." -ForegroundColor Yellow
+                Write-Log "Local policy restrictions detected." -Type "WARNING"
             } else {
-                Write-Host "  [+] 未检测到本地策略冲突。" -ForegroundColor Green
-                Write-Log "未检测到策略冲突。" -Type "SUCCESS"
+                Write-Host "  [+] No local policy conflicts detected." -ForegroundColor Green
+                Write-Log "No policy conflicts detected." -Type "SUCCESS"
             }
         }
     }
-    catch { Write-Log "GPO 检测失败: $($_.Exception.Message)" -Type "ERROR" }
+    catch { Write-Log "GPO detection failed: $($_.Exception.Message)" -Type "ERROR" }
 }
 
 function Parse-PrintEventLog {
-    Write-Log "正在解析前 5 条 PrintService 错误/警告事件..." -Type "INFO"
+    Write-Log "Parsing top 5 PrintService Error/Warning events..." -Type "INFO"
     Write-Host "`n  ======================================================================"
-    Write-Host "                 PrintService 事件日志解析器（前 5 条）"
+    Write-Host "                 PRINTSERVICE EVENT LOG PARSER (TOP 5)"
     Write-Host "  ======================================================================"
     try {
         $events = Get-WinEvent -FilterHashtable @{
@@ -2188,27 +2310,27 @@ function Parse-PrintEventLog {
         } -MaxEvents 5 -ErrorAction SilentlyContinue
         if ($events) {
             $resolutionMap = @{
-                '808' = "驱动安装失败。执行 [43] 孤立驱动清理。"
-                '842' = "队列损坏。执行 [37] 强制清除打印队列。"
-                '354' = "后台处理程序启动失败。执行 [38] 后台处理程序依赖项重置。"
-                '824' = "打印机离线。执行 [26] WSD 到 TCP/IP 转换器。"
+                '808' = "Driver install failure. Execute [43] Orphaned Driver Sweeper."
+                '842' = "Queue corruption. Execute [37] Force Purge Print Queue."
+                '354' = "Spooler failed to start. Execute [38] Spooler Dependency Reset."
+                '824' = "Printer offline. Execute [26] WSD to TCP/IP Converter."
             }
             foreach ($evt in $events) {
-                $levelStr = if ($evt.Level -eq 2) { "错误" } else { "警告" }
+                $levelStr = if ($evt.Level -eq 2) { "ERROR" } else { "WARNING" }
                 $color = if ($evt.Level -eq 2) { "Red" } else { "Yellow" }
-                Write-Host "`n  [$levelStr] 事件 $($evt.Id) - $($evt.TimeCreated)" -ForegroundColor $color
-                Write-Host "  消息：$($evt.Message)" -ForegroundColor White
+                Write-Host "`n  [$levelStr] Event $($evt.Id) - $($evt.TimeCreated)" -ForegroundColor $color
+                Write-Host "  Message: $($evt.Message)" -ForegroundColor White
 
                 $suggestion = ""
                 if ($evt.Id -eq 372) {
                     if ($evt.Message -match "Access is denied" -or $evt.Message -match "error code.*: 5\b") {
-                        $suggestion = "权限被阻止。执行 [12] 禁用密码共享或 [60] 注入凭据。"
+                        $suggestion = "Permission blocked. Execute [12] Disable Password Sharing or [60] Inject Credentials."
                     }
                     elseif ($evt.Message -match "The network path was not found" -or $evt.Message -match "error code.*: 53\b") {
-                        $suggestion = "主机不可达。检查主机 IP/电源，然后执行 [14] 开放防火墙。"
+                        $suggestion = "Host unreachable. Verify Host IP/Power, then Execute [14] Open Firewall."
                     }
                     else {
-                        $suggestion = "后台处理程序/驱动崩溃。执行 [06] 或 [37] 强制清除打印队列。"
+                        $suggestion = "Spooler/Driver crash. Execute [06] or [37] Force Purge Print Queue."
                     }
                 }
                 elseif ($resolutionMap.ContainsKey($evt.Id.ToString())) {
@@ -2216,51 +2338,51 @@ function Parse-PrintEventLog {
                 }
 
                 if ($suggestion) {
-                    Write-Host "  建议：$suggestion" -ForegroundColor Green
+                    Write-Host "  SUGGESTION: $suggestion" -ForegroundColor Green
                 }
             }
         }
         else {
-            Write-Host "  [+] 未找到错误/警告事件。PrintService 健康。" -ForegroundColor Green
+            Write-Host "  [+] No Error/Warning events found. PrintService is healthy." -ForegroundColor Green
         }
-        Write-Log "PrintService 事件日志已解析。" -Type "SUCCESS"
+        Write-Log "PrintService event log parsed." -Type "SUCCESS"
     }
-    catch { Write-Log "事件日志解析失败: $($_.Exception.Message)" -Type "ERROR" }
+    catch { Write-Log "Event log parse failed: $($_.Exception.Message)" -Type "ERROR" }
 }
 
 function Map-LocalPortUNC {
     Write-Host "`n  ======================================================================"
-    Write-Host "               映射本地端口到 UNC 路径（绕过）"
+    Write-Host "               MAP LOCAL PORT TO UNC PATH (BYPASS)"
     Write-Host "  ======================================================================"
-    Write-Host "  [!] 如果标准共享仍然失败，提示「检查打印机名称」错误时使用此选项。"
-    $ip = Read-Host "  [?] 目标主机 IP/主机名（例如 192.168.1.10）"
-    $share = Read-Host "  [?] 精确打印机共享名称（例如 EPSON_L120）"
+    Write-Host "  [!] Use this if standard sharing STILL fails with 'Check printer name' error."
+    $ip = Read-Host "  [?] Target Host IP/Hostname (e.g., 192.168.1.10)"
+    $share = Read-Host "  [?] Exact Printer Share Name (e.g., EPSON_L120)"
     if ($ip -and $share) {
         $uncPath = "\\$ip\$share"
         try {
-            Write-Host "  [*] 正在尝试标准本地端口创建：$uncPath" -ForegroundColor Cyan
+            Write-Host "  [*] Attempting standard Local Port creation: $uncPath" -ForegroundColor Cyan
             Add-PrinterPort -Name $uncPath -ErrorAction Stop
-            Write-Log "已通过 API 为 UNC 创建本地端口：$uncPath" -Type "SUCCESS"
-            Write-Host "  [+] 本地端口已注入！您现在可以添加本地打印机并选择此端口。" -ForegroundColor Green
+            Write-Log "Local Port created for UNC via API: $uncPath" -Type "SUCCESS"
+            Write-Host "  [+] Local Port injected! You can now Add a Local Printer and select this port." -ForegroundColor Green
         }
         catch {
-            Write-Host "  [*] 标准方法被 Windows 阻止。正在部署注册表绕过..." -ForegroundColor Yellow
+            Write-Host "  [*] Standard method blocked by Windows. Deploying Registry Bypass..." -ForegroundColor Yellow
             try {
                 $portRegPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Ports"
-
+                if (-not (Test-Path $portRegPath)) { New-Item -Path $portRegPath -Force | Out-Null }
                 Set-ItemProperty -Path $portRegPath -Name $uncPath -Value "" -Type String -Force -ErrorAction Stop
 
-                Write-Host "  [*] 端口已注入。正在重启打印后台处理程序以完成..." -ForegroundColor Cyan
+                Write-Host "  [*] Port injected. Restarting Print Spooler to finalize..." -ForegroundColor Cyan
                 Restart-Service spooler -Force -ErrorAction SilentlyContinue
 
-                Write-Log "已通过注册表绕过为 UNC 注入本地端口：$uncPath" -Type "SUCCESS"
-                Write-Host "  [+] 绕过成功！端口 $uncPath 现在在您的端口列表中可用。" -ForegroundColor Green
-                Write-Host "  [!] 下一步：转到「添加打印机」->「添加本地打印机」->「使用现有端口」。" -ForegroundColor Green
-                Write-Host "  [!] 从下拉菜单中选择 $uncPath，然后选择您的驱动程序。" -ForegroundColor Green
+                Write-Log "Local Port injected for UNC via Registry Bypass: $uncPath" -Type "SUCCESS"
+                Write-Host "  [+] BYPASS SUCCESS! Port $uncPath is now available in your port list." -ForegroundColor Green
+                Write-Host "  [!] NEXT STEP: Go to 'Add Printer' -> 'Add a local printer' -> 'Use an existing port'." -ForegroundColor Green
+                Write-Host "  [!] Select $uncPath from the drop-down menu, then choose your driver." -ForegroundColor Green
             }
             catch {
-                Write-Log "绕过失败: $($_.Exception.Message)" -Type "ERROR"
-                Write-Host "  [-] 绕过失败。注册表访问被管理员/GPO 完全锁定。" -ForegroundColor Red
+                Write-Log " Bypass Failed: $($_.Exception.Message)" -Type "ERROR"
+                Write-Host "  [-] Bypass failed. Registry access is completely locked down by Administrator/GPO." -ForegroundColor Red
             }
         }
     }
@@ -2268,93 +2390,248 @@ function Map-LocalPortUNC {
 
 function Remove-LocalPortUNC {
     Write-Host "`n  ======================================================================"
-    Write-Host "               移除已注入的本地端口 (UNC)"
+    Write-Host "               REMOVE INJECTED LOCAL PORT (UNC)"
     Write-Host "  ======================================================================"
 
-    Write-Host "  [*] 正在识别活动的打印机端口..." -ForegroundColor Cyan
+    Write-Host "  [*] Identifying active printer ports..." -ForegroundColor Cyan
     try {
         $ports = Get-PrinterPort | Select-Object -ExpandProperty Name | Sort-Object
         if ($ports) {
-            Write-Host "  [>] 检测到的端口：" -ForegroundColor Yellow
+            Write-Host "  [>] Detected Ports:" -ForegroundColor Yellow
             foreach ($p in $ports) {
                 if ($p -like "\\*") {
-                    Write-Host "      -> $p (UNC 映射)" -ForegroundColor Green
+                    Write-Host "      -> $p (UNC Mapping)" -ForegroundColor Green
                 } else {
                     Write-Host "      -> $p" -ForegroundColor Gray
                 }
             }
         }
-    } catch { Write-Host "  [!] 无法通过 API 检索端口列表。" -ForegroundColor Yellow }
+    } catch { Write-Host "  [!] Could not retrieve port list via API." -ForegroundColor Yellow }
 
-    Write-Host "`n  [!] 使用此选项删除之前由选项 [86] 创建的端口。"
-    $portName = Read-Host "  [?] 输入要移除的精确端口名称（例如 \\192.168.1.10\Printer）"
+    Write-Host "`n  [!] Use this to delete a port previously created by Option [86]."
+    $portName = Read-Host "  [?] Input exact Port Name to remove (e.g., \\192.168.1.10\Printer)"
     if (-not $portName) { return }
 
     try {
-        Write-Host "  [*] 正在尝试标准端口移除..." -ForegroundColor Cyan
+        Write-Host "  [*] Attempting standard port removal..." -ForegroundColor Cyan
         Remove-PrinterPort -Name $portName -ErrorAction Stop
-        Write-Log "端口 $portName 已通过 API 移除。" -Type "SUCCESS"
-        Write-Host "  [+] 端口 $portName 已成功移除。" -ForegroundColor Green
+        Write-Log "Port $portName removed via API." -Type "SUCCESS"
+        Write-Host "  [+] Port $portName successfully removed." -ForegroundColor Green
     }
     catch {
-        Write-Host "  [*] 标准方法失败。正在部署注册表清理..." -ForegroundColor Yellow
+        Write-Host "  [*] Standard method failed. Deploying Registry Purge..." -ForegroundColor Yellow
         try {
             $portRegPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Ports"
             Remove-ItemProperty -Path $portRegPath -Name $portName -ErrorAction Stop
 
-            Write-Host "  [*] 端口已从注册表删除。正在重启打印后台处理程序..." -ForegroundColor Cyan
+            Write-Host "  [*] Port deleted from registry. Restarting Print Spooler..." -ForegroundColor Cyan
             Restart-Service spooler -Force -ErrorAction SilentlyContinue
 
-            Write-Log "端口 $portName 已通过注册表绕过移除。" -Type "SUCCESS"
-            Write-Host "  [+] 绕过成功！端口 $portName 已被永久删除。" -ForegroundColor Green
+            Write-Log "Port $portName removed via Registry Bypass." -Type "SUCCESS"
+            Write-Host "  [+] BYPASS SUCCESS! Port $portName has been permanently deleted." -ForegroundColor Green
         }
         catch {
-            Write-Log "移除 UNC 端口失败: $($_.Exception.Message)" -Type "ERROR"
-            Write-Host "  [-] 移除端口失败。请确保输入的名称与端口列表中的完全一致。" -ForegroundColor Red
+            Write-Log "Failed to remove UNC Port: $($_.Exception.Message)" -Type "ERROR"
+            Write-Host "  [-] Failed to remove port. Ensure you typed the name EXACTLY as it appears in the port list." -ForegroundColor Red
         }
     }
-}function AllFix-Core {
-    cls
-    Write-Host "`n  ==================================================================================================="
-    Write-Host "         执行全部修复（50 项自动修复）"
-    Write-Host "  ===================================================================================================`n"
-    Write-Log "运行全部修复（静默=$script:silentNuke）" -Type "INFO"
+}
 
-    Write-Host "  [*] [1/50] 检测操作系统..." -ForegroundColor Cyan
-    Write-Host "  $script:productName Build $script:buildNumber"
 
-    Write-Host "  [*] [2/50] 安全备份注册表... (菜单 64)" -ForegroundColor Cyan
+function Fix-HostServerRole {
+    Clear-Screen
+    $title = switch ($script:lang) { "ZH" { "正在优化主机 / 打印服务器电脑(USB 直连)" } "EN" { "OPTIMIZING HOST / PRINT SERVER PC (USB-CONNECTED)" } default { "OPTIMASI KOMPUTER HOST / SERVER PRINTER (TERHUBUNG USB)" } }
+    Write-Host "`n  ===================================================================================================" -ForegroundColor Cyan
+    Write-Host "                    $title" -ForegroundColor Yellow
+    Write-Host "  ===================================================================================================`n" -ForegroundColor Cyan
+    Write-Log "Running Host/Print Server Optimization (LANG=$script:lang)" -Type "INFO"
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [1/8] 正在安全备份注册表..." } "EN" { "  [*] [1/8] Securing Registry Backup..." } default { "  [*] [1/8] Mengamankan Cadangan Registri (Backup)..." } }) -ForegroundColor Cyan
     Backup-Registry
 
-    Write-Host "  [*] [3/50] 刷新 GPO 缓存（注册表更改前）..." -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [2/8] 正在启用后台打印程序远程 RPC 端点(接受客户端连接)..." } "EN" { "  [*] [2/8] Enforcing Spooler Remote RPC Endpoint (Accepting Client Connections)..." } default { "  [*] [2/8] Mengizinkan Spooler Menerima Koneksi RPC Klien Jaringan..." } }) -ForegroundColor Cyan
+    try {
+        $polPrint = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers"
+        if (-not (Test-Path $polPrint)) { New-Item -Path $polPrint -Force | Out-Null }
+        Set-ItemProperty -Path $polPrint -Name RegisterSpoolerRemoteRpcEndPoint -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+    } catch {}
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [3/8] 正在将网络配置文件设置为“专用”..." } "EN" { "  [*] [3/8] Enforcing Network Connection Profile to Private..." } default { "  [*] [3/8] Mengubah Profil Jaringan ke Mode Private..." } }) -ForegroundColor Cyan
+    Set-NetworkPrivate
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [4/8] 正在开启无密码共享与来宾访问权限..." } "EN" { "  [*] [4/8] Opening Passwordless Sharing & Guest Access Permissions..." } default { "  [*] [4/8] Membuka Akses Berbagi Tanpa Sandi & Izin Guest..." } }) -ForegroundColor Cyan
+    Disable-PasswordSharing
+    Enable-SMBGuest
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [5/8] 正在开放文件和打印机共享的防火墙与 WSD 发现..." } "EN" { "  [*] [5/8] Opening Windows Firewall for File & Printer Sharing and WSD Discovery..." } default { "  [*] [5/8] Membuka Akses Firewall untuk Printer & Penemuan WSD..." } }) -ForegroundColor Cyan
+    Open-Firewall
+    Fix-WSDFirewall
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [6/8] 正在禁用 SMB 服务器安全签名强制..." } "EN" { "  [*] [6/8] Disabling SMB Server Security Signing Enforcement..." } default { "  [*] [6/8] Mematikan Wajib SMB Server Signing..." } }) -ForegroundColor Cyan
+    Fix-SMBSigning
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [7/8] 正在清理打印机共享名称(移除非法字符与空格)..." } "EN" { "  [*] [7/8] Sanitizing Printer Share Names (Removing illegal characters & spaces)..." } default { "  [*] [7/8] Merapikan Nama Share Printer dari Spasi & Karakter Ilegal..." } }) -ForegroundColor Cyan
+    Sanitize-PrinterShareName
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [8/8] 正在部署后台打印程序守护计划任务并重启后台打印程序..." } "EN" { "  [*] [8/8] Deploying Spooler Watchdog Scheduled Task & Restarting Spooler..." } default { "  [*] [8/8] Memasang Tugas Pemantau Spooler Otomatis (Watchdog) & Restart..." } }) -ForegroundColor Cyan
+    Set-SpoolerWatchdog
+    Reset-Spooler
+
+    Write-Log "Host Server Optimization concluded." -Type "SUCCESS"
+    Write-Host ""
+    Write-Host $(switch ($script:lang) { "ZH" { "  [+] 主机 / 打印服务器优化成功完成!" } "EN" { "  [+] Host / Print Server optimization completed successfully!" } default { "  [+] Optimasi Komputer Host / Server Printer berhasil diterapkan!" } }) -ForegroundColor Green
+    Write-Host $(switch ($script:lang) { "ZH" { "  [i] 网络上的其他电脑现在可以连接这台电脑共享的打印机了。" } "EN" { "  [i] Other PCs on the network can now connect to printers shared by this computer." } default { "  [i] Komputer lain di jaringan kini dapat mendeteksi dan tersambung ke printer PC ini." } }) -ForegroundColor Cyan
+}
+
+function Fix-ClientWorkstationRole {
+    Clear-Screen
+    $title = switch ($script:lang) { "ZH" { "正在优化客户端电脑(连接共享打印机)" } "EN" { "OPTIMIZING CLIENT PC (CONNECTING TO SHARED PRINTER)" } default { "OPTIMASI KOMPUTER KLIEN (MENYAMBUNG KE PRINTER SHARING)" } }
+    Write-Host "`n  ===================================================================================================" -ForegroundColor Cyan
+    Write-Host "                    $title" -ForegroundColor Yellow
+    Write-Host "  ===================================================================================================`n" -ForegroundColor Cyan
+    Write-Log "Running Client Workstation Optimization (LANG=$script:lang)" -Type "INFO"
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [1/7] 正在安全备份注册表..." } "EN" { "  [*] [1/7] Securing Registry Backup..." } default { "  [*] [1/7] Mengamankan Cadangan Registri (Backup)..." } }) -ForegroundColor Cyan
+    Backup-Registry
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [2/7] 正在激活 RPC 命名管道与 TCP 协议路径..." } "EN" { "  [*] [2/7] Activating RPC Named Pipes & TCP Protocol Pathways..." } default { "  [*] [2/7] Mengaktifkan Jalur Protokol RPC Named Pipes & TCP..." } }) -ForegroundColor Cyan
+    Fix-NamedPipes
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [3/7] 正在应用 Point and Print 驱动提升绕过(PrintNightmare 覆盖)..." } "EN" { "  [*] [3/7] Applying Point & Print Driver Elevation Bypass (PrintNightmare Override)..." } default { "  [*] [3/7] Menerapkan Bypass Elevasi Point and Print (Driver Install)..." } }) -ForegroundColor Cyan
+    Fix-AdvancedPointAndPrint
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [4/7] 正在禁用 SMB 客户端签名强制(解决 24H2/25H2 阻止)..." } "EN" { "  [*] [4/7] Disabling SMB Client Signing Enforcement (Resolving 24H2/25H2 block)..." } default { "  [*] [4/7] Mematikan Wajib SMB Client Signing (Atasi Blokir Win 11)..." } }) -ForegroundColor Cyan
+    Fix-SMBSigning
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [5/7] 正在修复 HKCU 打印机注册表项权限..." } "EN" { "  [*] [5/7] Fixing HKCU Printer Registry Key Permissions..." } default { "  [*] [5/7] Memperbaiki Izin Kunci Registri Printer HKCU..." } }) -ForegroundColor Cyan
+    Fix-HKCU-PrinterKeyPerms
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [6/7] 正在启用网络发现服务(mDNS、LLMNR、SSDP)..." } "EN" { "  [*] [6/7] Enabling Network Discovery Services (mDNS, LLMNR, SSDP)..." } default { "  [*] [6/7] Mengaktifkan Layanan Penemuan Perangkat Jaringan (mDNS, WSD)..." } }) -ForegroundColor Cyan
+    Fix-mDNS
+    Fix-NetworkServices
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [7/7] 正在开放防火墙规则并刷新 DNS 缓存..." } "EN" { "  [*] [7/7] Opening Firewall Rules & Flushing DNS Cache..." } default { "  [*] [7/7] Membuka Port Firewall & Menyegarkan Cache DNS..." } }) -ForegroundColor Cyan
+    Open-Firewall
+    try { $LASTEXITCODE = 0; ipconfig /flushdns > $null 2>&1 } catch {}
+
+    Write-Log "Client Workstation Optimization concluded." -Type "SUCCESS"
+    Write-Host ""
+    Write-Host $(switch ($script:lang) { "ZH" { "  [+] 客户端工作站优化成功完成!" } "EN" { "  [+] Client Workstation optimization completed successfully!" } default { "  [+] Optimasi Komputer Klien berhasil diterapkan!" } }) -ForegroundColor Green
+    Write-Host $(switch ($script:lang) { "ZH" { "  [i] 现在尝试连接共享打印机(例如 \\电脑名\打印机名)。" } "EN" { "  [i] Try connecting to the shared printer now (e.g. \\ComputerName\PrinterName)." } default { "  [i] Silakan coba sambungkan kembali printer sharing sekarang (contoh: \\NamaKomputer\NamaPrinter)." } }) -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [i] 如果仍然提示输入密码,请通过菜单 6 -> 1 保存凭据。" } "EN" { "  [i] If still prompted for password, save credentials via Menu 6 -> 1." } default { "  [i] Jika masih meminta sandi, simpan kredensial via Menu 6 -> 1." } }) -ForegroundColor Yellow
+    Write-Host $(switch ($script:lang) { "ZH" { "  [i] 如果错误 0x709 仍然存在,请通过菜单 7 -> 1 使用本地端口 UNC 映射。" } "EN" { "  [i] If error 0x709 persists, use Local Port UNC Mapping via Menu 7 -> 1." } default { "  [i] Jika masih muncul error 0x709, gunakan Pemetaan Port UNC via Menu 7 -> 1." } }) -ForegroundColor Yellow
+}
+
+# Windows Printer Sharing Fix - Interactive Engine & Trilingual UI (ZH / EN / ID)
+# Supports Simplified Chinese (ZH, default), English (EN) and Bahasa Indonesia (ID)
+
+$script:lang = "ZH"
+try {
+    $savedLang = (Get-ItemProperty -Path "HKCU:\Software\WindowsPrinterSharingFix" -Name "Language" -ErrorAction SilentlyContinue).Language
+    if ($savedLang -in @("ZH", "EN", "ID")) {
+        $script:lang = $savedLang
+    }
+} catch {}
+
+function Set-AppLanguage {
+    param([string]$NewLang)
+    if ($NewLang -in @("ZH", "EN", "ID")) {
+        $script:lang = $NewLang
+        try {
+            if (-not (Test-Path "HKCU:\Software\WindowsPrinterSharingFix")) {
+                New-Item -Path "HKCU:\Software\WindowsPrinterSharingFix" -Force | Out-Null
+            }
+            Set-ItemProperty -Path "HKCU:\Software\WindowsPrinterSharingFix" -Name "Language" -Value $script:lang -Force
+        } catch {}
+    }
+}
+
+function Toggle-AppLanguage {
+    # Cycle ZH -> EN -> ID -> ZH
+    if ($script:lang -eq "ZH") {
+        Set-AppLanguage -NewLang "EN"
+    } elseif ($script:lang -eq "EN") {
+        Set-AppLanguage -NewLang "ID"
+    } else {
+        Set-AppLanguage -NewLang "ZH"
+    }
+}
+
+function Get-SystemHealthSummary {
+    $spoolerOk = $false
+    try {
+        $spoolerOk = ((Get-Service spooler -ErrorAction SilentlyContinue).Status -eq 'Running')
+    } catch {}
+
+    $netPrivate = $true
+    try {
+        $pubProfile = Get-NetConnectionProfile -ErrorAction SilentlyContinue | Where-Object { $_.NetworkCategory -eq 'Public' }
+        if ($pubProfile) { $netPrivate = $false }
+    } catch {}
+
+    $smbSignReq = $false
+    try {
+        $signVal = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" -Name "RequireSecuritySignature" -ErrorAction SilentlyContinue).RequireSecuritySignature
+        if ($signVal -eq 1) { $smbSignReq = $true }
+    } catch {}
+
+    $passSharingOff = $true
+    try {
+        $blankVal = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse" -ErrorAction SilentlyContinue).LimitBlankPasswordUse
+        if ($blankVal -eq 1) { $passSharingOff = $false }
+    } catch {}
+
+    return @{
+        Spooler         = $spoolerOk
+        Network         = $netPrivate
+        SMBSigning      = (-not $smbSignReq)
+        PasswordSharing = $passSharingOff
+    }
+}
+
+function AllFix-Core {
+    Clear-Screen
+    $title = switch ($script:lang) { "ZH" { "正在执行 ALLFIX(50 项自动修复)" } "EN" { "EXECUTING ALLFIX (50 AUTOMATED FIXES)" } default { "MENJALANKAN ALLFIX (50 PERBAIKAN OTOMATIS SEKALIGUS)" } }
+    Write-Host "`n  ===================================================================================================" -ForegroundColor Cyan
+    Write-Host "                    $title" -ForegroundColor Yellow
+    Write-Host "  ===================================================================================================`n" -ForegroundColor Cyan
+    Write-Log "RUN ALLFIX (SILENT=$script:silentNuke, LANG=$script:lang)" -Type "INFO"
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [1/50] 正在检测操作系统..." } "EN" { "  [*] [1/50] Detecting Operating System..." } default { "  [*] [1/50] Mendeteksi Sistem Operasi..." } }) -ForegroundColor Cyan
+    Write-Host "      $script:productName Build $script:buildNumber" -ForegroundColor Gray
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [2/50] 正在安全备份注册表..." } "EN" { "  [*] [2/50] Securing Registry Backup..." } default { "  [*] [2/50] Mengamankan Cadangan Registri (Backup)..." } }) -ForegroundColor Cyan
+    Backup-Registry
+
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [3/50] 正在刷新组策略缓存 (gpupdate)..." } "EN" { "  [*] [3/50] Refreshing Group Policy cache (gpupdate)..." } default { "  [*] [3/50] Memperbarui Cache Kebijakan Sistem (gpupdate)..." } }) -ForegroundColor Cyan
     try { $LASTEXITCODE = 0; gpupdate /force > $null 2>&1 } catch {}
 
-    Write-Host "  [*] [4/50] 检查 RPC 和 DCOM... (菜单 32)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [4/50] 正在审计并初始化 RPC / DCOM 服务..." } "EN" { "  [*] [4/50] Auditing & Initializing RPC / DCOM Services..." } default { "  [*] [4/50] Memeriksa & Mengaktifkan Layanan RPC & DCOM..." } }) -ForegroundColor Cyan
     Check-RPC
 
-    Write-Host "  [*] [5/50] 修复错误 0x0000011b... (菜单 01)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [5/50] 正在修复错误 0x0000011b (RpcAuthnLevelPrivacy)..." } "EN" { "  [*] [5/50] Patching Error 0x0000011b (RpcAuthnLevelPrivacy)..." } default { "  [*] [5/50] Memperbaiki Error 0x0000011b (RpcAuthnLevelPrivacy)..." } }) -ForegroundColor Cyan
     Fix-RpcAuthn0x0000011b
 
-    Write-Host "  [*] [6/50] 深度修复 0x00000709（多层 RPC）... (菜单 02)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [6/50] 正在深度修复错误 0x00000709(多层 RPC 与 Point and Print)..." } "EN" { "  [*] [6/50] Deep Fix Error 0x00000709 (Multi-Layer RPC & Point and Print)..." } default { "  [*] [6/50] Memperbaiki Error 0x00000709 (Jalur RPC & Point and Print)..." } }) -ForegroundColor Cyan
     Fix-Deep0x00000709
 
-    Write-Host "  [*] [7/50] KB5089549 驱动策略和 HKCU 权限修复..." -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [7/50] 正在对齐 KB5089549 驱动策略与 HKCU 权限..." } "EN" { "  [*] [7/50] Aligning KB5089549 Driver Policy & HKCU Permissions..." } default { "  [*] [7/50] Menyelaraskan Kebijakan Driver & Izin Registri HKCU..." } }) -ForegroundColor Cyan
     Fix-CrossSignedDriverPolicy
     Fix-HKCU-PrinterKeyPerms
 
-    Write-Host "  [*] [8/50] 绕过错误 0x00000bc4... (菜单 03)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [8/50] 正在绕过错误 0x00000bc4(未找到打印机)..." } "EN" { "  [*] [8/50] Bypassing Error 0x00000bc4 (No Printers Found)..." } default { "  [*] [8/50] Mengatasi Error 0x00000bc4 (Printer Jaringan Tidak Ditemukan)..." } }) -ForegroundColor Cyan
     Fix-Discovery0x00000bc4
 
-    Write-Host "  [*] [9/50] 修复错误 0x00000040 (KeepConn)... (菜单 07)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [9/50] 正在修复错误 0x00000040(KeepConn 与网络可用性)..." } "EN" { "  [*] [9/50] Fixing Error 0x00000040 (KeepConn & Network Availability)..." } default { "  [*] [9/50] Memperbaiki Error 0x00000040 (KeepConn & Nama Jaringan)..." } }) -ForegroundColor Cyan
     Fix-Network0x00000040
 
-    Write-Host "  [*] [10/50] 修复错误 0x00000002 (CopyFilesPolicy)... (菜单 08)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [10/50] 正在修复错误 0x00000002(CopyFilesPolicy 驱动载入)..." } "EN" { "  [*] [10/50] Fixing Error 0x00000002 (CopyFilesPolicy Driver Ingestion)..." } default { "  [*] [10/50] Mengatasi Error 0x00000002 (Kebijakan Salin Berkas Driver)..." } }) -ForegroundColor Cyan
     Fix-DriverCopy0x00000002
 
-    Write-Host "  [*] [11/50] 修复错误 0x0000007e (RPC 身份验证)... (菜单 09)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [11/50] 正在修复错误 0x0000007e(RPC 位数不匹配 32/64 位)..." } "EN" { "  [*] [11/50] Fixing Error 0x0000007e (RPC Bitness Mismatch 32/64-bit)..." } default { "  [*] [11/50] Mengatasi Error 0x0000007e (Bitness Driver 32/64-bit)..." } }) -ForegroundColor Cyan
     Fix-RpcBitness0x0000007e
 
-    Write-Host "  [*] [12/50] 注入 DnsOnWire、StrictName 和 UAC 绕过... (菜单 57)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [12/50] 正在启用 DnsOnWire、StrictNameChecking 并绕过 UAC 令牌筛选..." } "EN" { "  [*] [12/50] Enabling DnsOnWire, StrictNameChecking & UAC Token Filter Bypass..." } default { "  [*] [12/50] Mengaktifkan Nama Jaringan & Bypass Filter Token UAC..." } }) -ForegroundColor Cyan
     try {
         Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Print" -Name DnsOnWire -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
         Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -Name DisableStrictNameChecking -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
@@ -2362,184 +2639,205 @@ function Remove-LocalPortUNC {
     catch {}
     Fix-UACTokenFilter
 
-    Write-Host "  [*] [13/50] 禁用 SMB 签名要求和相互身份验证... (菜单 16)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [13/50] 正在禁用 SMB 签名要求(修复 Win 11 访问)..." } "EN" { "  [*] [13/50] Disabling SMB Signing Requirement (Fix Win 11 Access)..." } default { "  [*] [13/50] Mematikan Wajib SMB Signing (Fix Windows 11 Gagal Konek)..." } }) -ForegroundColor Cyan
     Fix-SMBSigning
 
-    Write-Host "  [*] [14/50] 确保 SMB2/SMB3 兼容性和提供程序顺序... (菜单 17 和 18)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [14/50] 正在强制现代 SMB2/SMB3 兼容性与提供程序顺序..." } "EN" { "  [*] [14/50] Enforcing Modern SMB2/SMB3 Compatibility & Provider Order..." } default { "  [*] [14/50] Memastikan Kompatibilitas Modern SMB2/SMB3 & Urutan Provider..." } }) -ForegroundColor Cyan
     Fix-ModernSMB
     Fix-ProviderOrder
 
-    Write-Host "  [*] [15/50] 强制使用命名管道和 TCP... (菜单 13)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [15/50] 正在通过命名管道与 TCP 路径强制 RPC..." } "EN" { "  [*] [15/50] Enforcing RPC via Named Pipes & TCP Pathways..." } default { "  [*] [15/50] Mengaktifkan RPC via Named Pipes & TCP..." } }) -ForegroundColor Cyan
     Fix-NamedPipes
 
-    Write-Host "  [*] [16/50] 禁用客户端渲染... (菜单 05)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [16/50] 正在禁用客户端渲染 (CSR)..." } "EN" { "  [*] [16/50] Disabling Client-Side Rendering (CSR)..." } default { "  [*] [16/50] Mematikan Client-Side Rendering (CSR)..." } }) -ForegroundColor Cyan
     Fix-CSR
 
-    Write-Host "  [*] [17/50] 禁用驱动隔离... (菜单 40)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [17/50] 正在禁用打印驱动隔离策略..." } "EN" { "  [*] [17/50] Disabling Print Driver Isolation Policy..." } default { "  [*] [17/50] Mematikan Isolasi Driver Printer..." } }) -ForegroundColor Cyan
     try {
         Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Print" -Name IsolationPolicy -Value 0 -Type DWord -Force
     }
     catch {}
 
-    Write-Host "  [*] [18/50] 启动网络发现、mDNS、NetBIOS 和 WSD 服务... (菜单 20 和 04)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [18/50] 正在启动发现服务(mDNS、WSD、NetBIOS)..." } "EN" { "  [*] [18/50] Starting Discovery Services (mDNS, WSD, NetBIOS)..." } default { "  [*] [18/50] Mengaktifkan Layanan Penemuan Jaringan (mDNS, WSD, NetBIOS)..." } }) -ForegroundColor Cyan
     Fix-mDNS
     Fix-NetworkServices
 
-    Write-Host "  [*] [19/50] 配置防火墙并开放 UDP 通道... (菜单 14 和 21)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [19/50] 正在配置文件和打印机共享的防火墙规则..." } "EN" { "  [*] [19/50] Configuring Windows Firewall Rules for File & Printer Sharing..." } default { "  [*] [19/50] Membuka Akses Firewall untuk Printer & Berbagi Berkas..." } }) -ForegroundColor Cyan
     Open-Firewall
     Fix-WSDFirewall
 
-    Write-Host "  [*] [20/50] 开放 SMB 来宾访问（客户端和服务器）... (菜单 82)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [20/50] 正在开启 SMB 来宾访问并移除匿名阻止..." } "EN" { "  [*] [20/50] Opening SMB Guest Access & Dropping Anonymous Blocks..." } default { "  [*] [20/50] Membuka Akses SMB Guest & Anonymous..." } }) -ForegroundColor Cyan
     Enable-SMBGuest
 
-    Write-Host "  [*] [21/50] 禁用密码保护网络共享... (菜单 12)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [21/50] 正在禁用密码保护的网络共享..." } "EN" { "  [*] [21/50] Disabling Password Protected Network Sharing..." } default { "  [*] [21/50] Mematikan Berbagi Berproteksi Password..." } }) -ForegroundColor Cyan
     Disable-PasswordSharing
 
-    Write-Host "  [*] [22/50] 降级 LSA 保护并强制 NTLMv2... (菜单 54、58 和 62)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [22/50] 正在对齐 LSA 保护、NTLMv2 与凭据保护..." } "EN" { "  [*] [22/50] Aligning LSA Protection, NTLMv2 & Credential Guard..." } default { "  [*] [22/50] Menyelaraskan Proteksi LSA, Otentikasi NTLMv2 & Credential Guard..." } }) -ForegroundColor Cyan
     Fix-LSAProtection
     Fix-NTLMv2
     Fix-CredentialGuard
 
-    Write-Host "  [*] [23/50] 绕过智能应用控制 (SAC)... (菜单 55)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [23/50] 正在绕过智能应用控制 (SAC) 驱动阻止..." } "EN" { "  [*] [23/50] Bypassing Smart App Control (SAC) Driver Block..." } default { "  [*] [23/50] Mengatasi Pembatasan Smart App Control (SAC)..." } }) -ForegroundColor Cyan
     Fix-SAC
 
-    Write-Host "  [*] [24/50] 初始化 IPP 和 Mopria 打印共享... (菜单 22)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [24/50] 正在初始化 IPP 与 Mopria 打印共享基础组件..." } "EN" { "  [*] [24/50] Initializing IPP & Mopria Print Sharing Foundation..." } default { "  [*] [24/50] Menyiapkan Fondasi Berbagi IPP & Mopria..." } }) -ForegroundColor Cyan
     Fix-IPPSharing
 
-    Write-Host "  [*] [25/50] 禁用 WPP（允许旧版网络打印）... (菜单 59)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [25/50] 正在禁用 WPP(允许传统网络打印机驱动)..." } "EN" { "  [*] [25/50] Disabling WPP (Allowing Legacy Network Printer Drivers)..." } default { "  [*] [25/50] Menonaktifkan WPP untuk Mengizinkan Driver Jaringan..." } }) -ForegroundColor Cyan
     try {
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\WPP" -Name Enabled -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+        $wppKey = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\WPP"
+        if (-not (Test-Path $wppKey)) { New-Item -Path $wppKey -Force | Out-Null }
+        Set-ItemProperty -Path $wppKey -Name Enabled -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
     }
     catch {}
 
-    Write-Host "  [*] [26/50] 修复 RDP 和 LPD 协议... (菜单 52 和 24)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [26/50] 正在配置 RDP 打印机重定向与 LPD 协议..." } "EN" { "  [*] [26/50] Configuring RDP Printer Redirection & LPD Protocols..." } default { "  [*] [26/50] Menyesuaikan Protokol Printer RDP & LPD..." } }) -ForegroundColor Cyan
     Fix-RDPPrinter
     Manage-LPR
 
-    Write-Host "  [*] [27/50] 强制网络设为专用模式... (菜单 11)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [27/50] 正在强制网络连接配置文件为“专用”模式..." } "EN" { "  [*] [27/50] Forcing Network Connection Profiles to Private Mode..." } default { "  [*] [27/50] Mengubah Kategori Jaringan ke Mode Private..." } }) -ForegroundColor Cyan
     Set-NetworkPrivate
 
-    Write-Host "  [*] [28/50] 降权虚拟适配器 (Hyper-V)... (菜单 23)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [28/50] 正在降低 Hyper-V / WSL 虚拟网络适配器优先级..." } "EN" { "  [*] [28/50] Deprioritizing Hyper-V / WSL Virtual Network Adapters..." } default { "  [*] [28/50] Menyesuaikan Prioritas Adaptor Jaringan Virtual Hyper-V..." } }) -ForegroundColor Cyan
     Fix-HyperVConflict
 
-    Write-Host "  [*] [29/50] 刷新 DNS 和 Winsock... (菜单 10)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [29/50] 正在刷新 DNS 缓存并重置网络 Winsock..." } "EN" { "  [*] [29/50] Flushing DNS Cache & Resetting Network Winsock..." } default { "  [*] [29/50] Membersihkan Cache DNS & Winsock Jaringan..." } }) -ForegroundColor Cyan
     Reset-Network
 
-    Write-Host "  [*] [30/50] 终止后台处理程序..." -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [30/50] 正在停止后台打印程序服务..." } "EN" { "  [*] [30/50] Stopping Print Spooler Service..." } default { "  [*] [30/50] Menghentikan Sementara Layanan Spooler..." } }) -ForegroundColor Cyan
     Stop-Service spooler -Force -ErrorAction SilentlyContinue
 
-    Write-Host "  [*] [31/50] 注入后台处理程序自动重启恢复... (菜单 34)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [31/50] 正在配置后台打印程序故障自动重启..." } "EN" { "  [*] [31/50] Configuring Spooler Auto-Restart on Failure..." } default { "  [*] [31/50] Mengatur Pemulihan Otomatis Spooler Saat Crash..." } }) -ForegroundColor Cyan
     Set-SpoolerRecovery
 
-    Write-Host "  [*] [32/50] 清除后台处理程序依赖项 (http 和 RPCSS)... (菜单 35)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [32/50] 正在清理过时的后台打印程序依赖项(http 与 RPCSS)..." } "EN" { "  [*] [32/50] Purging Stale Spooler Dependencies (http & RPCSS)..." } default { "  [*] [32/50] Membersihkan Dependensi Layanan Spooler (http & RPCSS)..." } }) -ForegroundColor Cyan
     Reset-SpoolerDependency
 
-    Write-Host "  [*] [33/50] 重置 PRINTERS 文件夹权限... (菜单 06)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [33/50] 正在重置 PRINTERS 文件夹权限(通用 SID)..." } "EN" { "  [*] [33/50] Resetting PRINTERS Folder Permissions (Universal SID)..." } default { "  [*] [33/50] Mereset Hak Akses Folder Antrean Cetak PRINTERS..." } }) -ForegroundColor Cyan
     Reset-SpoolerPerm
 
-    Write-Host "  [*] [34/50] 清除过期打印队列和 Splwow64... (菜单 31)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [34/50] 正在清理过时的后台打印程序队列与 Splwow64 句柄..." } "EN" { "  [*] [34/50] Purging Stale Spooler Queue & Splwow64 Handles..." } default { "  [*] [34/50] Membersihkan Antrean Spooler yang Menumpuk..." } }) -ForegroundColor Cyan
     Reset-Spooler
 
-    Write-Host "  [*] [35/50] 绕过 AppContainer UWP/Edge 回环... (菜单 47)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [35/50] 正在绕过 Edge 与 UWP 应用的 AppContainer 回环..." } "EN" { "  [*] [35/50] Bypassing AppContainer Loopback for Edge & UWP Apps..." } default { "  [*] [35/50] Menyesuaikan Izin Loopback Aplikasi Windows & Edge..." } }) -ForegroundColor Cyan
     Fix-UWPPrinting
 
-    Write-Host "  [*] [36/50] 应用高级即插即用和 PrintNightmare 绕过... (菜单 56)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [36/50] 正在应用高级 Point and Print 提升覆盖..." } "EN" { "  [*] [36/50] Applying Advanced Point & Print Elevation Overrides..." } default { "  [*] [36/50] Menerapkan Override Kebijakan Point and Print..." } }) -ForegroundColor Cyan
     Fix-AdvancedPointAndPrint
 
-    Write-Host "  [*] [37/50] 部署后台处理程序监视任务... (菜单 36)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [37/50] 正在部署后台打印程序守护计划任务..." } "EN" { "  [*] [37/50] Deploying Spooler Watchdog Scheduled Task..." } default { "  [*] [37/50] Memasang Tugas Pemantau Spooler Otomatis (Watchdog)..." } }) -ForegroundColor Cyan
     Set-SpoolerWatchdog
 
-    Write-Host "  [*] [38/50] 重启 BITS 服务... (菜单 68)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [38/50] 正在重启后台智能传输服务 (BITS)..." } "EN" { "  [*] [38/50] Restarting Background Intelligent Transfer Service (BITS)..." } default { "  [*] [38/50] Merestart Layanan Transfer Berkas Latar Belakang (BITS)..." } }) -ForegroundColor Cyan
     Manage-BITS
 
-    Write-Host "  [*] [39/50] 重启后台处理程序（验证）..." -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [39/50] 正在验证后台打印程序状态..." } "EN" { "  [*] [39/50] Verifying Spooler Status..." } default { "  [*] [39/50] Memastikan Layanan Spooler Berjalan Normal..." } }) -ForegroundColor Cyan
     if ((Get-Service spooler).Status -ne 'Running') { Start-Service spooler -ErrorAction SilentlyContinue }
-    Write-Host "  [+] 后台处理程序已验证正常运行。" -ForegroundColor Green
+    Write-Host $(switch ($script:lang) { "ZH" { "  [+] 后台打印程序已验证正常运行。" } "EN" { "  [+] Print Spooler validated operational." } default { "  [+] Layanan Spooler aktif dan terverifikasi normal." } }) -ForegroundColor Green
 
-    Write-Host "  [*] [40/50] 清除 Kerberos 登录缓存..." -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [40/50] 正在清理 Kerberos 票证缓存..." } "EN" { "  [*] [40/50] Purging Kerberos Ticket Cache..." } default { "  [*] [40/50] Membersihkan Tiket Otentikasi Kerberos..." } }) -ForegroundColor Cyan
     try { $LASTEXITCODE = 0; klist purge > $null 2>&1 } catch {}
 
-    Write-Host "  [*] [41/50] 重启 WdiSystemHost 服务..." -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [41/50] 正在重启系统诊断服务 (WdiSystemHost)..." } "EN" { "  [*] [41/50] Restarting System Diagnostic Service (WdiSystemHost)..." } default { "  [*] [41/50] Merestart Layanan Diagnostik Sistem (WdiSystemHost)..." } }) -ForegroundColor Cyan
     try { Restart-Service WdiSystemHost -Force -ErrorAction SilentlyContinue } catch {}
 
-    Write-Host "  [*] [42/50] 注册 mDNS（多播）..." -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [42/50] 正在注册多播 DNS..." } "EN" { "  [*] [42/50] Registering Multicast DNS..." } default { "  [*] [42/50] Mendaftarkan Ulang DNS Multicast..." } }) -ForegroundColor Cyan
     try { $LASTEXITCODE = 0; ipconfig /registerdns > $null 2>&1 } catch {}
 
-    Write-Host "  [*] [43/50] 生成还原点... (菜单 66)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [43/50] 正在创建系统还原点..." } "EN" { "  [*] [43/50] Generating System Restore Point..." } default { "  [*] [43/50] Membuat Titik Pemulihan Sistem (Restore Point)..." } }) -ForegroundColor Cyan
     Create-RestorePoint
 
-    Write-Host "  [*] [44/50] 扫描 V4 打印类驱动程序... (菜单 41)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [44/50] 正在扫描并优化 V4 打印类驱动..." } "EN" { "  [*] [44/50] Scanning & Optimizing V4 Print Class Drivers..." } default { "  [*] [44/50] Memeriksa & Mengoptimalkan Driver Printer Kelas V4..." } }) -ForegroundColor Cyan
     Fix-V4ClassDriver
 
-    Write-Host "  [*] [45/50] 恢复网络配置文件（强制专用）... (菜单 28)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [45/50] 正在将网络连接配置文件设为“专用”..." } "EN" { "  [*] [45/50] Securing Network Connection Profile to Private..." } default { "  [*] [45/50] Mengamankan Profil Jaringan ke Mode Private..." } }) -ForegroundColor Cyan
     $profiles = Get-NetConnectionProfile -ErrorAction SilentlyContinue
     $profiles | Where-Object { $_.NetworkCategory -eq 'Public' } | Set-NetConnectionProfile -NetworkCategory Private -ErrorAction SilentlyContinue
 
-    Write-Host "  [*] [46/50] 强制清除打印队列文件... (菜单 37)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [46/50] 正在强制清理损坏的打印队列文件 (.spl/.shd)..." } "EN" { "  [*] [46/50] Forcibly Purging Corrupt Print Queue Files (.spl/.shd)..." } default { "  [*] [46/50] Menghapus Bersih Berkas Antrean Cetak yang Rusak..." } }) -ForegroundColor Cyan
     Nuke-PrintQueue
 
-    Write-Host "  [*] [47/50] 重置后台处理程序依赖项（注册表）... (菜单 38)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [47/50] 正在重置后台打印程序注册表依赖项..." } "EN" { "  [*] [47/50] Resetting Spooler Registry Dependencies..." } default { "  [*] [47/50] Menyetel Ulang Dependensi Registri Spooler..." } }) -ForegroundColor Cyan
     Reset-SpoolerDependencyRegistry
 
-    Write-Host "  [*] [48/50] 清理打印机共享名称... (菜单 53)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [48/50] 正在清理打印机共享名称(移除非法字符)..." } "EN" { "  [*] [48/50] Sanitizing Printer Share Names (Removing illegal characters)..." } default { "  [*] [48/50] Merapikan Nama Share Printer dari Karakter Ilegal..." } }) -ForegroundColor Cyan
     Sanitize-PrinterShareName
 
-    Write-Host "  [*] [49/50] 部署更新后自动重新应用任务..." -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [49/50] 正在部署更新后自动重新应用计划任务..." } "EN" { "  [*] [49/50] Deploying Post-Update Auto-Reapply Scheduled Task..." } default { "  [*] [49/50] Memasang Tugas Pemulihan Otomatis Paska Update Windows..." } }) -ForegroundColor Cyan
     Set-PostPatchTuesdayTask
 
-    Write-Host "  [*] [50/50] 解析 PrintService 事件日志和最终后台处理程序验证... (菜单 78)" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [50/50] 正在解析打印服务事件日志并最终验证后台打印程序..." } "EN" { "  [*] [50/50] Parsing PrintService Event Log & Final Spooler Validation..." } default { "  [*] [50/50] Menganalisis Log Peristiwa Cetak & Validasi Akhir Spooler..." } }) -ForegroundColor Cyan
     Parse-PrintEventLog
-    if ((Get-Service spooler).Status -ne 'Running') { Start-Service spooler -ErrorAction SilentlyContinue }
-    Write-Host "  [+] 后台处理程序已验证正常运行。" -ForegroundColor Green
+    $sp = Get-Service spooler -ErrorAction SilentlyContinue
+    if ($sp -and $sp.Status -ne 'Running') { Start-Service spooler -ErrorAction SilentlyContinue }
+    Write-Host $(switch ($script:lang) { "ZH" { "  [+] 所有验证通过,后台打印程序运行正常。" } "EN" { "  [+] All validations passed. Print Spooler running smoothly." } default { "  [+] Seluruh validasi selesai. Layanan Spooler berjalan sempurna." } }) -ForegroundColor Green
 
-    Write-Log "全部修复完成" -Type "SUCCESS"
+    Write-Log $(switch ($script:lang) { "ZH" { "ALLFIX 完成" } "EN" { "ALLFIX CONCLUDED" } default { "ALLFIX SELESAI" } }) -Type "SUCCESS"
 
     if ($script:silentNuke) {
-        Write-Host "`n  ==================================================================================================="
-        Write-Host "    [+] 静默全部修复完成！3 秒后重启..."
-        Write-Host "  ===================================================================================================`n"
+        Write-Host "`n  ===================================================================================================" -ForegroundColor Cyan
+        $rebootMsg = switch ($script:lang) { "ZH" { "    [+] ALLFIX 已完成!系统将在 3 秒后重启..." } "EN" { "    [+] ALLFIX COMPLETED! REBOOTING SYSTEM IN 3 SECONDS..." } default { "    [+] ALLFIX SELESAI! KOMPUTER AKAN MERESTART DALAM 3 DETIK..." } }
+        Write-Host $rebootMsg -ForegroundColor Green
+        Write-Host "  ===================================================================================================`n" -ForegroundColor Cyan
         Start-Sleep -Seconds 3
-        Restart-Computer -Force
+        Invoke-SystemReboot
     }
 
-    Write-Host "`n  ==================================================================================================="
-    Write-Host "  [!] 域信息：如果主机已加入 AD，请在 secpol.msc 中验证「从网络访问此计算机」权限" -ForegroundColor Yellow
-    Write-Host "  [!] 仍然被拒绝？提示：如果连接仍然失败，请使用选项 [60] 或绕过 [86]。"
+    Write-Host "`n  ===================================================================================================" -ForegroundColor Cyan
+    switch ($script:lang) {
+        "ZH" {
+            Write-Host "  [i] 域提示:如果此电脑加入了 Active Directory 域," -ForegroundColor Yellow
+            Write-Host "      请在 secpol.msc 中检查“从网络访问此计算机”权限。" -ForegroundColor Yellow
+            Write-Host "  [i] 仍无法连接?请使用凭据注入 [菜单 6 -> 1] 或本地端口 UNC 映射 [菜单 7 -> 1]。" -ForegroundColor Green
+        }
+        "EN" {
+            Write-Host "  [i] DOMAIN NOTICE: If host is AD-joined, verify 'Access this computer from network' in secpol.msc." -ForegroundColor Yellow
+            Write-Host "  [i] STILL DENIED? Use Credential Injection [Menu 6 -> 1] or Local Port UNC Bypass [Menu 7 -> 1]." -ForegroundColor Green
+        }
+        default {
+            Write-Host "  [i] INFO DOMAIN: Jika komputer ini tergabung dalam Domain Active Directory," -ForegroundColor Yellow
+            Write-Host "      pastikan hak 'Access this computer from network' diatur di secpol.msc." -ForegroundColor Yellow
+            Write-Host "  [i] MASIH TIDAK BISA KONEK? Gunakan Simpan Kredensial [Menu 6 -> 1] atau Pemetaan Port UNC [Menu 7 -> 1]." -ForegroundColor Green
+        }
+    }
 
-    $checkError = Read-Host "   [?] 查看执行错误日志？(Y/N)"
-    if ($checkError -eq 'Y') {
-        Write-Host "`n   --- 错误扫描结果 ---" -ForegroundColor Cyan
-        $errors = Select-String -Path $script:logFile -Pattern " - 错误 - " -SimpleMatch
+    $promptErr = switch ($script:lang) { "ZH" { "   [?] 查看执行错误日志?(Y/N)" } "EN" { "   [?] View execution error logs? (Y/N)" } default { "   [?] Tampilkan catatan error eksekusi jika ada? (Y/N)" } }
+    $checkError = Read-Host $promptErr
+    if ($checkError -match '^[yY]') {
+        Write-Host $(switch ($script:lang) { "ZH" { "`n   --- 错误扫描结果 ---" } "EN" { "`n   --- ERROR SCAN RESULTS ---" } default { "`n   --- HASIL PEMINDAIAN ERROR ---" } }) -ForegroundColor Cyan
+        $errors = Select-String -Path $script:logFile -Pattern " - ERROR - " -SimpleMatch
         if ($errors) {
             $errors.Line | ForEach-Object { Write-Host $_ -ForegroundColor Red }
         }
         else {
-            Write-Host "   [+] 日志中未发现错误。" -ForegroundColor Green
+            Write-Host $(switch ($script:lang) { "ZH" { "   [+] 日志文件中没有错误记录。" } "EN" { "   [+] No errors recorded in log file." } default { "   [+] Tidak ada error tercatat di dalam file log." } }) -ForegroundColor Green
         }
-        Write-Host "   --------------------`n"
+        Write-Host "   ------------------------------`n"
     }
 
-    $allFixRestart = Read-Host "   [?] 立即执行系统重启？(Y/N)"
-    if ($allFixRestart -eq 'Y') {
-        Write-Host "  [*] 正在执行，5 秒后重启..." -ForegroundColor Cyan
-        Restart-Computer -Force
+    $promptReboot = switch ($script:lang) { "ZH" { "   [?] 立即重启系统?(Y/N)" } "EN" { "   [?] Execute immediate system reboot? (Y/N)" } default { "   [?] Restart komputer sekarang untuk menerapkan seluruh perubahan? (Y/N)" } }
+    $allFixRestart = Read-Host $promptReboot
+    if ($allFixRestart -match '^[yY]') {
+        Write-Host $(switch ($script:lang) { "ZH" { "  [*] 正在继续,5 秒后重启..." } "EN" { "  [*] Proceeding, rebooting in 5 seconds..." } default { "  [*] Mempersiapkan restart dalam 5 detik..." } }) -ForegroundColor Cyan
+        Invoke-SystemReboot
     }
     else {
-        Write-Host "  [*] 请手动重启以应用所有更改。" -ForegroundColor Cyan
+        Write-Host $(switch ($script:lang) { "ZH" { "  [*] 请手动重启以应用所有安全更改。" } "EN" { "  [*] Reboot manually to apply all security changes." } default { "  [*] Silakan restart komputer secara manual nanti agar seluruh perbaikan aktif." } }) -ForegroundColor Cyan
     }
 }
 
 function Extreme-25H2 {
-    cls
-    Write-Host "`n  ==================================================================================================="
-    Write-Host "        Win 11 25H2 / 24H2 / 26H2+ / ARM64 极端修复路径"
-    Write-Host "  ==================================================================================================="
-    Write-Host "  [*] 此路径为具有严格安全策略的 Windows 11 系统应用深度修复。"
-    Write-Host "  [*] 正在自动运行所有修复..." -ForegroundColor Cyan
+    Clear-Screen
+    Write-Host "`n  ===================================================================================================" -ForegroundColor Cyan
+    $extremeTitle = switch ($script:lang) { "ZH" { "        Windows 11 24H2 / 25H2 / 26H2+ 及 ARM64 深度修复方案" } "EN" { "        EXTREME PATH FOR WIN 11 24H2 / 25H2 / 26H2+ & ARM64" } default { "        PERBAIKAN MENDALAM WINDOWS 11 TERBARU (24H2 / 25H2 / 26H2+ & ARM64)" } }
+    Write-Host $extremeTitle -ForegroundColor Yellow
+    Write-Host "  ===================================================================================================" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] 正在为安全策略严格的 Windows 11 环境应用深度策略修改。" } "EN" { "  [*] Applying deep policy modifications for strict security Windows 11 environments." } default { "  [*] Menerapkan penyesuaian menyeluruh untuk sistem Windows 11 dengan kebijakan keamanan ketat." } }) -ForegroundColor Gray
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] 正在运行所有自动修复..." } "EN" { "  [*] Running all automated fixes..." } default { "  [*] Menjalankan seluruh rangkaian perbaikan secara otomatis..." } }) -ForegroundColor Cyan
 
-    Write-Log "运行极端修复 25H2/26H2" -Type "INFO"
+    Write-Log $(switch ($script:lang) { "ZH" { "运行 Windows 11 24H2/25H2/26H2 深度修复" } "EN" { "Run Extreme Fix 24H2/25H2/26H2" } default { "Menjalankan Solusi Khusus Windows 11 24H2/25H2/26H2" } }) -Type "INFO"
 
-    Write-Host "  [*] 在应用修复前刷新 GPO 缓存..." -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] 应用修复前正在刷新组策略缓存..." } "EN" { "  [*] Flushing GPO cache before applying fixes..." } default { "  [*] Menyegarkan cache Group Policy sebelum perbaikan..." } }) -ForegroundColor Cyan
     try { $LASTEXITCODE = 0; gpupdate /force > $null 2>&1 } catch {}
 
     Fix-Deep0x00000709
@@ -2572,201 +2870,358 @@ function Extreme-25H2 {
     Sanitize-PrinterShareName
 
     try {
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\WPP" -Name Enabled -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+        $wppKey = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\WPP"
+        if (-not (Test-Path $wppKey)) { New-Item -Path $wppKey -Force | Out-Null }
+        Set-ItemProperty -Path $wppKey -Name Enabled -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
         Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Print" -Name DnsOnWire -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
         Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -Name DisableStrictNameChecking -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0" -Name NtlmMinClientSec -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
-        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0" -Name NtlmMinServerSec -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+        $lsaMsv = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0"
+        if (-not (Test-Path $lsaMsv)) { New-Item -Path $lsaMsv -Force | Out-Null }
+        Set-ItemProperty -Path $lsaMsv -Name NtlmMinClientSec -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $lsaMsv -Name NtlmMinServerSec -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
     }
     catch {}
 
     try {
-        $LASTEXITCODE = 0; cmdkey /list | Select-String $env:COMPUTERNAME | ForEach-Object { $t = $_.ToString() -replace '(?i)^\s*Target:\s*', ''; cmdkey /delete:$t > $null 2>&1 }
+        $LASTEXITCODE = 0; cmdkey /list | Select-String $env:COMPUTERNAME | ForEach-Object { $t = ($_.ToString() -replace '(?i)^\s*Target:\s*', '').Trim(); if ($t) { cmdkey /delete:"$t" > $null 2>&1 } }
         $LASTEXITCODE = 0; klist purge > $null 2>&1
         $LASTEXITCODE = 0; ipconfig /flushdns > $null 2>&1
         $LASTEXITCODE = 0; nbtstat -RR > $null 2>&1
     }
     catch {}
 
-    Write-Log "极端修复路径完成！" -Type "SUCCESS"
-    Write-Host "  [+] 极端安全配置更改完成。建议重启系统。" -ForegroundColor Green
+    Write-Log $(switch ($script:lang) { "ZH" { "深度修复方案完成!" } "EN" { "Extreme Path completed!" } default { "Perbaikan Mendalam Windows 11 Selesai!" } }) -Type "SUCCESS"
+    Write-Host $(switch ($script:lang) { "ZH" { "  [+] 深度安全更改已完成,建议重启系统。" } "EN" { "  [+] Extreme security changes completed. System reboot is recommended." } default { "  [+] Konfigurasi keamanan Windows 11 berhasil disesuaikan. Disarankan merestart komputer." } }) -ForegroundColor Green
 
-    $extremeRestart = Read-Host "`n   [?] 立即执行系统重启？(Y/N)"
-    if ($extremeRestart -eq 'Y') { Restart-Computer -Force }
+    $extremeRestart = Read-Host $(switch ($script:lang) { "ZH" { "`n   [?] 立即重启系统吗?(Y/N)" } "EN" { "`n   [?] Execute immediate system reboot now? (Y/N)" } default { "`n   [?] Restart komputer sekarang? (Y/N)" } })
+    if ($extremeRestart -match '^[yY]') { Invoke-SystemReboot }
 }
 
 function Restart-PC {
-    Write-Host "`n  [*] 系统将在 5 秒后重启..." -ForegroundColor Yellow
+    $msg = switch ($script:lang) { "ZH" { "`n  [*] 系统将在 5 秒后重启..." } "EN" { "`n  [*] System rebooting in 5 seconds..." } default { "`n  [*] Komputer akan merestart dalam 5 detik..." } }
+    Write-Host $msg -ForegroundColor Yellow
     Start-Sleep -Seconds 5
-    Restart-Computer -Force
+    Invoke-SystemReboot
 }
 
 function Detect-Win {
-    Write-Host "`n  ======================================================================"
-    Write-Host "                 Windows 与架构检测"
-    Write-Host "  ======================================================================"
-    Write-Host "  [+] 系统版本 ：$script:productName" -ForegroundColor Green
-    Write-Host "  [+] 系统版本号：$script:buildNumber" -ForegroundColor Green
+    Write-Host "`n  ======================================================================" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "             系统版本与架构检测" } "EN" { "             WINDOWS & ARCHITECTURE DETECTION" } default { "             DETEKSI VERSI & ARSITEKTUR WINDOWS" } }) -ForegroundColor Yellow
+    Write-Host "  ======================================================================" -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [+] 系统版本    : $script:productName" } "EN" { "  [+] OS Version    : $script:productName" } default { "  [+] Versi OS      : $script:productName" } }) -ForegroundColor Green
+    Write-Host $(switch ($script:lang) { "ZH" { "  [+] 系统构建    : $script:buildNumber" } "EN" { "  [+] OS Build      : $script:buildNumber" } default { "  [+] Build OS      : $script:buildNumber" } }) -ForegroundColor Green
     if ($script:isARM64) {
-        Write-Host "  [+] 架构     ：ARM64（骁龙/Apple M 系列虚拟机）" -ForegroundColor Yellow
+        Write-Host $(switch ($script:lang) { "ZH" { "  [+] 系统架构    : ARM64 (Snapdragon / Apple Silicon VM)" } "EN" { "  [+] Architecture  : ARM64 (Snapdragon / Apple Silicon VM)" } default { "  [+] Arsitektur    : ARM64 (Snapdragon / VM Apple Silicon)" } }) -ForegroundColor Yellow
     }
     else {
-        Write-Host "  [+] 架构     ：AMD64 / x64" -ForegroundColor Cyan
+        Write-Host $(switch ($script:lang) { "ZH" { "  [+] 系统架构    : AMD64 / x64 (64 位)" } "EN" { "  [+] Architecture  : AMD64 / x64 (64-Bit)" } default { "  [+] Arsitektur    : AMD64 / x64 (64-Bit)" } }) -ForegroundColor Cyan
     }
     if ($script:isServer) {
-        Write-Host "  [+] 版本     ：Windows Server 版" -ForegroundColor Yellow
+        Write-Host $(switch ($script:lang) { "ZH" { "  [+] 系统版本    : Windows Server 版" } "EN" { "  [+] Edition       : Windows Server Edition" } default { "  [+] Edisi         : Windows Server Edition" } }) -ForegroundColor Yellow
     }
     else {
-        Write-Host "  [+] 版本     ：客户端（家庭版/专业版/企业版）" -ForegroundColor Cyan
+        Write-Host $(switch ($script:lang) { "ZH" { "  [+] 系统版本    : Windows 客户端版(家庭版 / 专业版 / 企业版)" } "EN" { "  [+] Edition       : Windows Client (Home / Pro / Enterprise)" } default { "  [+] Edisi         : Windows Client (Home / Pro / Enterprise)" } }) -ForegroundColor Cyan
     }
-}function Show-Help {
+}
+
+function Show-Help {
     param([string]$Topic = "")
 
-    $helpData = @{
-        '1'  = @("修复错误 0x0000011b (RpcAuthnLevelPrivacy)", "禁用 RpcAuthnLevelPrivacyEnabled 注册表键，使 RPC 身份验证不再阻止共享连接。", "Windows 10/11 累积更新后最常见的错误。")
-        '2'  = @("深度修复 0x00000709（多层 RPC 和 Kerberos）", "应用多层修复：RPC 命名管道、Kerberos 绕过、HKCU 清理和旧版覆盖。", "Windows 11 中标准修复无法解决的持续性 0x00000709 错误。也必须在主机上运行！")
-        '3'  = @("绕过错误 0x00000bc4（未找到打印机）", "强制 RPC 使用命名管道协议，以便可以发现打印机。", "尽管网络可用，Windows 仍报告「未找到打印机」。")
-        '4'  = @("修复错误 0x80070035（自动化网络服务）", "自动启动 fdPHost、FDResPub、SSDPSRV、upnphost 服务。", "目标电脑未在网络中显示；提示「找不到网络路径」。")
-        '5'  = @("禁用客户端渲染（错误 0x000006d1）", "在注册表中启用 DisableClientSideRendering。", "打印作业因客户端驱动渲染问题而失败。")
-        '6'  = @("修复错误 0x80070005（重置后台处理程序 ACL）", "使用 icacls 将 Spool\Printers 目录 ACL 重置为默认值。", "打印操作期间出现「拒绝访问」(0x80070005) 错误。")
-        '7'  = @("修复错误 0x00000040（网络不可用）", "修复 PrintProcessor 和 Ports 注册表节点。", "访问打印机时提示「网络不可用」。")
-        '8'  = @("修复错误 0x00000002 (CopyFilesPolicy)", "配置 CopyFilesPolicy 允许驱动摄取。", "从主机服务器克隆打印机驱动时出错。")
-        '9'  = @("修复错误 0x0000007e（RPC 位数不匹配）", "强制跨架构驱动注册表合规。", "32 位与 64 位架构不匹配。")
-        '10' = @("完整网络重置（DNS、Winsock、NetBIOS）", "刷新 DNS、释放/续订 IP、重置 Winsock 和 NetBIOS。", "网络连接不稳定、RTO 或严重延迟。")
-        '11' = @("强制网络配置文件为专用", "将所有连接配置文件覆盖为专用状态。", "因网络配置文件设为公用而阻止共享。")
-        '12' = @("强制禁用密码保护共享", "修改 LSA 注册表：limitblankpassworduse=0、everyoneincludesanonymous=1。", "未配置密码却仍出现凭据提示。")
-        '13' = @("通过命名管道和 TCP 启用 RPC", "强制 RPC 通过命名管道和 TCP 协议通信。", "RPC 终结点阻止导致的打印机连接错误。")
-        '14' = @("配置防火墙文件和打印机共享", "在防火墙中启用「文件和打印机共享」和「网络发现」规则。", "主机在网络中不可见，共享被严重阻止。")
-        '15' = @("SMB 1.0 旧版协议管理（开/关）", "根据用户输入启用或禁用 SMB 1.0 协议。", "需要连接旧版硬件（Win XP/7）。警告：勒索软件风险！")
-        '16' = @("禁用 SMB 签名（修复 Win 11 访问 NAS）", "禁用 SMB 客户端和服务器的 RequireSecuritySignature。", "从 Win 11 24H2+ 无法访问 NAS 或旧版主机。")
-        '17' = @("强制现代 SMB2/SMB3 拓扑", "确保 SMB2/SMB3 处于活动状态，明确禁用 SMB1。", "向现代安全协议过渡。")
-        '18' = @("将 SMB 置于网络提供程序顺序首位", "在提供程序列表中优先使用 LanmanWorkstation。", "SMB 连接严重延迟。")
-        '19' = @("禁用 IPv6 协议栈", "通过注册表和 netsh 接口禁用 IPv6。", "纯 IPv4 网络中 IPv6 导致路由问题。")
-        '20' = @("启用 mDNS 和 LLMNR（发现协议）", "启用多播 DNS 和 LLMNR 协议。", "通过主机名解析无法发现打印机。")
-        '21' = @("配置 WSD 防火墙规则（端口 3702）", "在防火墙中为 WSD 发现开放 UDP 端口 3702。", "Web 服务发现被防火墙阻止。")
-        '22' = @("启用 IPP 和 Mopria 共享基础", "启用 Windows IPP 和 Mopria 基础功能。", "使用 IPP 协议的现代打印机。")
-        '23' = @("解决 Hyper-V/WSL 虚拟网络冲突", "禁用虚拟适配器上的打印机绑定。", "Hyper-V/WSL 虚拟交换机干扰 LAN 拓扑。")
-        '24' = @("安装旧版 LPR/LPD 协议", "启用 Windows LPR 端口监视器和 LPD 服务功能。", "需要通过旧版 LPR 连接。")
-        '25' = @("远程网络打印机发现", "扫描并枚举目标上的所有共享打印机。", "目标主机上的共享打印机未知。")
-        '26' = @("WSD 到标准 TCP/IP 端口转换器", "检测 WSD 端口并将打印机迁移到稳定的标准 TCP/IP 端口。", "因 WSD 发现失败导致打印机间歇性消失或离线。")
-        '27' = @("网络套接字重新初始化（选择性清理）", "重启 SMB 客户端/服务器服务并清除卡住的 445/135 端口连接。", "IP 更改或 VPN 后过期网络连接阻止打印机访问。")
-        '28' = @("恢复网络配置文件（自动监视）", "强制将所有公用网络配置文件设为专用，并可选择部署监视任务。", "重启后网络配置文件重置为公用，阻止打印机共享。")
-        '29' = @("手动注入标准 TCP/IP 端口", "通过 WMI 脚本注入 TCP/IP 端口。", "需要手动添加 IP 打印机端口。")
-        '30' = @("强制初始化 WSD 打印设备", "为 Web 服务发现初始化 WSDPrintDevice 服务。", "WSD 网络打印机仍无法被检测到。")
-        '31' = @("硬重置打印后台处理程序（清除队列）", "停止后台处理程序，强制删除 Spool\Printers 中的队列文件，重启后台处理程序。", "打印队列完全冻结，后台处理程序挂起。")
-        '32' = @("重新初始化 RPC 和 DCOM 服务", "验证并重启 RpcSs 和 DcomLaunch 服务。", "RPC 或 DCOM 服务终止/崩溃；提示「RPC 服务器不可用」。")
-        '33' = @("远程目标后台处理程序重启", "通过 sc.exe 执行远程后台处理程序重置。", "远程后台处理程序冻结且无法物理访问。", "需要目标主机上的管理员权限。")
-        '34' = @("配置后台处理程序崩溃时自动重启", "通过 sc.exe 配置恢复操作：崩溃时自动重启。", "后台处理程序极不稳定，需要自愈机制。")
-        '35' = @("清除过期后台处理程序依赖项", "将 DependOnService 后台处理程序参数重置为默认值 (RPCSS, http)。", "RPC 服务正常但后台处理程序不活动。")
-        '36' = @("部署后台处理程序监视（每 5 分钟审计）", "部署每 5 分钟审计一次后台处理程序的计划任务。", "需要持续可用性的高运行时间打印服务器环境。")
-        '37' = @("强制清除打印队列 (.shd/.spl)", "终止所有打印进程并清除损坏的 .shd/.spl 后台文件。", "标准取消方法无法完全清空队列。")
-        '38' = @("后台处理程序依赖项注册表重置", "通过 HKLM 直接将后台处理程序 DependOnService 注册表重置为出厂默认值 (RPCSS, http)。", "即使重启后后台处理程序也无法启动。")
-        '39' = @("驱动管理（打印服务器属性）", "启动打印服务器属性 GUI 管理已安装的驱动。", "打印机使用错误驱动或存在重复驱动实例。")
-        '40' = @("禁用打印驱动隔离", "在注册表中禁用 IsolationPolicy。", "后台处理程序与特定驱动同时崩溃。")
-        '41' = @("通用打印类驱动 V4 修复", "扫描 V4 驱动是否存在损坏的 PrintConfig.dll 并触发 DriverStore 重新注册。", "V4 打印机突然停止工作或打印乱码。")
-        '42' = @("切换 PCL 与 PostScript 驱动模式", "在 PCL 和 PostScript 渲染模式之间切换打印机的驱动。", "打印机输出随机字符页。")
-        '43' = @("孤立驱动清理 (pnputil)", "扫描 DriverStore 中的孤立打印机 OEM INF 包并强制删除。", "由于与旧的无形驱动冲突而无法安装新驱动。")
-        '44' = @("绕过「驱动当前正在使用」", "强制终止 PrintIsolationHost、splwow64 和管道进程以释放驱动句柄。", "Windows 拒绝删除驱动程序。")
-        '45' = @("幽灵 USB 端口和副本清除器", "检测并移除重复/幽灵打印机副本和失效 USB 端口。", "将打印机插入不同 USB 端口后产生了幽灵副本。")
-        '46' = @("强制移除幽灵打印机", "通过命令行 (printui) 强制移除打印机。", "幽灵或损坏的打印机拒绝标准卸载。")
-        '47' = @("修复 Microsoft Edge / UWP 打印", "重新注册 UWP 打印组件和回环豁免。", "从 Edge/UWP 应用打印失败，但从记事本成功。")
-        '48' = @("重新安装 Microsoft Print to PDF/XPS", "重新初始化原生 Windows PDF 和 XPS 打印功能。", "原生虚拟打印机缺失或生成错误。")
-        '49' = @("浏览器打印沙箱修复 (Chromium)", "清除浏览器打印缓存并修复打印对话框的回环豁免。", "可以在 Word 中打印但不能在 Chrome 中打印。")
-        '50' = @("强制永久默认打印机", "禁用自动管理并通过 WMI 强制设置默认打印机。", "Windows 根据网络位置动态更改默认打印机。")
-        '51' = @("强制设置默认打印机（注册表绕过）", "绕过 Windows 自动管理，通过直接 HKCU 注册表写入设置默认打印机。", "无法通过常规设置应用设置默认打印机。")
-        '52' = @("修复 RDP 打印机终端服务", "在 RDP 终端服务注册表中启用打印机重定向。", "通过 RDP 身份验证但本地打印机映射失败。")
-        '53' = @("自动清理打印机共享名称", "扫描共享打印机并将共享名称中的非法字符替换为下划线。", "客户端无法连接共享名称过长或复杂的打印机。")
-        '54' = @("降级 LSA 保护（旧版身份验证）", "在 LSA 注册表中禁用 RunAsPPL。", "因 Win 11 严格 LSA 保护导致共享登录失败。")
-        '55' = @("绕过智能应用控制 (SAC)", "将 VerifiedAndReputablePolicyState 设为关闭。", "Windows 11 SAC 积极阻止驱动安装程序。")
-        '56' = @("绕过高级 ServerList 即插即用（PrintNightmare 绕过）", "将 PrintNightmare 绕过（提升覆盖）和 ServerList 通配符 (*) 注入注册表。", "驱动下载期间出现「检查打印机名称」或「拒绝访问」等通用错误。", "Windows 11 Build 22621+ 需要")
-        '57' = @("绕过 UAC 管理员网络令牌筛选", "配置 LocalAccountTokenFilterPolicy = 1。", "UAC 筛选导致对工作组主机的远程管理失败。")
-        '58' = @("强制 NTLMv2 响应合规性", "将 LmCompatibilityLevel 严格配置为 NTLMv2（级别 3）。", "针对不同操作系统版本或网络存储 (NAS) 身份验证时出现「拒绝访问」。")
-        '59' = @("管理 Windows 受保护打印 (WPP)", "禁用 Windows 受保护打印功能。", "打印机驱动与 WPP 隔离不兼容。")
-        '60' = @("将 Windows 凭据永久注入凭据管理器", "将用户名/密码直接注入 Windows 凭据管理器。", "避免每次访问时手动身份验证。")
-        '61' = @("从 Windows 凭据管理器清除过期凭据", "通过 cmdkey 清除凭据管理器中无效或过期的凭据。", "主机密码已更改，但本地计算机保留过期缓存。")
-        '62' = @("绕过凭据保护（严格 NTLM 阻止）", "禁用 LsaCfgFlags 凭据保护注册表节点。", "启用了凭据保护的企业/专业版环境。")
-        '63' = @("跨用户凭据映射", "通过 NTUSER.DAT 注册表加载向所有用户配置文件注入登录 RunOnce 凭据任务。", "设置带多个本地帐户的共享电脑。")
-        '64' = @("执行前注册表备份（后台处理程序和网络）", "将 Print、Printers 策略和 LanmanWorkstation 注册表树导出到 C:\WindowsPrinterSharingFixBackup。", "建议在应用其他修复前执行。", "务必首先运行此选项！")
-        '65' = @("从备份回滚注册表", "从备份目录导入 .reg 文件。", "应用修复后情况恶化时使用。", "仅当之前执行过 [64] 备份时才有效。")
-        '66' = @("生成系统还原点（安全）", "生成系统还原点以进行完整系统回滚。", "执行重大系统级架构更改之前。")
-        '67' = @("系统文件检查器和 DISM 还原", "执行 SFC /scannow 和 DISM RestoreHealth。", "频繁蓝屏、异常错误或恶意软件清理后。", "此过程可能需要 10-30 分钟！")
-        '68' = @("重启 BITS（后台传输服务）", "重启后台智能传输服务。", "驱动无法自动下载。")
-        '69' = @("Windows 更新与阻止管理", "提供工具卸载更新、暂停更新、永久禁用更新服务（阻止修复还原）或恢复更新默认值。", "防止 Windows 重新启用受限协议或破坏打印机共享。")
-        '70' = @("启动原生 Windows 疑难解答", "执行原生 Windows 打印机疑难解答 (msdt)。", "手动干预前的初始诊断步骤。")
-        '71' = @("强制打印机在线状态", "通过 WMI/CIM 强制打印机的 WorkOffline 状态为 false。", "打印机状态卡在「脱机」或呈灰色。")
-        '72' = @("启动 Services.msc", "启动 Services.msc MMC 管理单元。", "手动验证打印后台处理程序运行状态。")
-        '73' = @("检测系统版本和构建架构", "显示系统版本、版本号和具体建议。", "选择特定修复前确保兼容性。")
-        '74' = @("Ping 与端口 445/135 诊断", "ICMP Ping + SMB (445) 和 RPC (135) 端口扫描。", "测试网络连接和防火墙状态的第一步。")
-        '75' = @("查看执行日志", "启动日志管理界面（记事本）。", "修复后审计和验证。")
-        '76' = @("审计最近 20 条打印服务错误日志", "解析系统事件日志中最近 20 条错误事件。", "调查打印问题的根本原因。")
-        '77' = @("系统诊断审计", "审计后台处理程序状态、SMB、防火墙和网络拓扑。", "部署修复前检查系统整体健康状况。")
-        '78' = @("PrintService 事件日志解析器（前 5 条）", "解析最近 5 条错误/警告事件并提供自动解决建议。", "没有明显错误代码的神秘打印问题。")
-        '79' = @("生成 HTML 诊断报告", "将执行日志编译为交互式 HTML 文件。", "用于 IT 文档或向上级汇报。")
-        '80' = @("检测 GPO 干预（策略扫描）", "扫描注册表和 gpresult 以查找影响打印机的组策略覆盖。", "修复暂时有效，但 gpupdate 或重启后再次失效。")
-        '81' = @("PrintBRM（备份/还原迁移）", "通过 PrintBrm.exe 执行打印机拓扑的完整备份或还原。", "向多台工作站部署打印机或迁移到新硬件。")
-        '82' = @("启用 SMB 来宾访问并取消匿名阻止", "在 LanmanWorkstation 注册表中启用 AllowInsecureGuestAuth。", "用于本地网络中的无密码共享。")
-        '83' = @("极端修复路径（Win 11 24H2/25H2/26H2+ 和 ARM64 专用）", "激进修复组合：DnsOnWire、StrictNameChecking、NTLM 级别、SMB 签名、Kerberos 清理等。", "标准修复在最新 Win 11 上无效。", "专为 Build 26000 及以上版本构建。")
-        '84' = @("执行全部修复（50 项自动修复）", "顺序执行 50 项自动修复。", "主要推荐 - 大多数常见情况的首选修复。", "完成后重启系统以获得最佳效果。")
-        '85' = @("静默全部修复并重启（零提示）", "静默执行全部 50 个步骤并自动重启。", "需要立即无人值守修复的紧急情况。", "系统将自动重启！请先保存所有重要工作！")
-        '86' = @("映射本地端口到 UNC 路径（绕过 0x00000709）", "尝试标准端口创建，若被阻止则回退到直接注册表注入绕过。", "标准共享失败且系统完全阻止「Add-PrinterPort」命令时。")
-        '87' = @("移除已注入的本地端口 (UNC)", "尝试标准端口移除，若被阻止则回退到注册表清理。", "映射端口不再需要或配置错误时。")
-        '88' = @("重启系统", "立即执行系统重启。", "运行任何重大修复后务必执行。")
-        '89' = @("退出脚本", "退出工具。", "故障排除完成时。")
+    $helpDataID = @{
+        '1'  = @("Perbaiki Error 0x0000011b (RpcAuthnLevelPrivacy)", "Mematikan kebijakan registri RpcAuthnLevelPrivacyEnabled agar otentikasi RPC tidak memblokir koneksi printer sharing.", "Sering terjadi setelah update rutin Windows 10/11.")
+        '2'  = @("Perbaiki Error 0x00000709 (Point and Print / Jalur RPC)", "Menerapkan perbaikan bertingkat: Named Pipes RPC, bypass otentikasi, pembersihan HKCU, dan override Point and Print.", "Error persisten 0x00000709 saat menyambung printer sharing di Windows 11. Perlu dijalankan juga di PC Server/Host.")
+        '3'  = @("Bypass Error 0x00000bc4 (Printer Tidak Ditemukan)", "Memaksa protokol RPC menggunakan Named Pipes agar printer sharing dapat ditemukan.", "Muncul pesan 'No printers were found' padahal jaringan normal.")
+        '4'  = @("Perbaiki Error 0x80070035 (Jalur Jaringan Tidak Ditemukan)", "Mengotomatiskan layanan fdPHost, FDResPub, SSDPSRV, dan upnphost agar PC terdeteksi di Network.", "Komputer target tidak muncul di jaringan atau muncul error 'The network path was not found'.")
+        '5'  = @("Matikan Client-Side Rendering (Error 0x000006d1)", "Mengaktifkan DisableClientSideRendering di registri agar proses rendering ditangani oleh server.", "Pekerjaan cetak gagal karena masalah rendering driver di sisi client.")
+        '6'  = @("Perbaiki Error 0x80070005 (Reset Izin ACL Spooler)", "Mereset hak akses direktori Spool\Printers ke standar menggunakan icacls dengan SID S-1-1-0 (Semua Pengguna).", "Muncul error 'Access Denied' saat mencetak.")
+        '7'  = @("Perbaiki Error 0x00000040 (Jaringan Tidak Tersedia / KeepConn)", "Memperbaiki registri PrintProcessor dan Ports agar koneksi sharing tetap terjaga.", "Muncul pesan error 'Network is unavailable' saat mengakses printer.")
+        '8'  = @("Perbaiki Error 0x00000002 (Kebijakan Salin Driver / CopyFilesPolicy)", "Mengatur CopyFilesPolicy agar client diizinkan mengunduh dan menyalin driver dari komputer host.", "Gagal mengkloning berkas driver printer dari server.")
+        '9'  = @("Perbaiki Error 0x0000007e (Ketidakcocokan Bitness Driver RPC)", "Menyelaraskan registri untuk komunikasi lintas arsitektur 32-bit dan 64-bit.", "Ketidakcocokan versi driver 32-bit vs 64-bit antar-komputer.")
+        '10' = @("Reset Total Jaringan (DNS, Winsock, NetBIOS)", "Membersihkan cache DNS, melepas & memperbarui IP, serta mereset Winsock dan NetBIOS.", "Koneksi jaringan tidak stabil, latency tinggi, atau IP nyangkut.")
+        '11' = @("Ubah Profil Jaringan ke Private", "Mengubah seluruh profil adaptor jaringan menjadi Private.", "Sharing terblokir karena Windows menganggap jaringan sebagai Public.")
+        '12' = @("Matikan Berbagi Berproteksi Password", "Mengatur registri LSA (limitblankpassworduse=0, everyoneincludesanonymous=1).", "Selalu meminta username/password padahal sharing sudah dibuka tanpa sandi.")
+        '13' = @("Aktifkan RPC via Named Pipes & TCP", "Memaksa komunikasi RPC printer melalui Named Pipes dan TCP.", "Koneksi printer gagal karena pemblokiran endpoint RPC.")
+        '14' = @("Buka Port Firewall untuk Berbagi Berkas & Printer", "Mengaktifkan aturan 'File and Printer Sharing' dan 'Network Discovery' pada Windows Firewall.", "Komputer tidak terdeteksi atau koneksi sharing terblokir firewall.")
+        '15' = @("Kelola Protokol Warisan SMB 1.0 (ON/OFF)", "Mengaktifkan atau mematikan fitur opsional SMB 1.0.", "Dibutuhkan jika menghubungkan ke perangkat atau OS jadul (Win XP/7).")
+        '16' = @("Matikan Wajib SMB Signing (Fix Windows 11 Gagal Konek)", "Mematikan RequireSecuritySignature pada klien dan server SMB.", "Windows 11 24H2+ gagal mengakses printer sharing atau NAS kantor.")
+        '17' = @("Pastikan Topologi Modern SMB2/SMB3 Aktif", "Memastikan protokol aman SMB2 dan SMB3 berjalan optimal.", "Menjaga stabilitas dan kecepatan transfer data sharing.")
+        '18' = @("Prioritaskan SMB dalam Urutan Provider Jaringan", "Menempatkan LanmanWorkstation di urutan teratas provider jaringan.", "Koneksi sharing terasa sangat lambat atau loading lama.")
+        '19' = @("Matikan Tumpukan Protokol IPv6", "Menonaktifkan IPv6 via registri dan konfigurasi adaptor netsh.", "Routing IPv6 mengganggu pencarian perangkat di LAN kantor yang murni IPv4.")
+        '20' = @("Aktifkan Protokol Penemuan mDNS & LLMNR", "Mengaktifkan resolusi nama Multicast DNS dan LLMNR.", "Printer tidak dapat ditemukan menggunakan nama komputer / hostname.")
+        '21' = @("Buka Port Firewall WSD (Port UDP 3702)", "Membuka port 3702 pada firewall khusus protokol Web Services Discovery.", "Penemuan printer WSD terhalang oleh firewall.")
+        '22' = @("Pasang Fondasi Berbagi IPP & Mopria", "Mengaktifkan fitur Windows Internet Printing Protocol dan standar Mopria.", "Dibutuhkan oleh printer jaringan generasi modern berbasis IPP.")
+        '23' = @("Atasi Konflik Adaptor Virtual Hyper-V / WSL", "Mematikan binding printer sharing pada switch virtual internal.", "Switch virtual Hyper-V/WSL mengacaukan rute deteksi printer LAN.")
+        '24' = @("Pasang Fitur Protokol Legacy LPR/LPD", "Mengaktifkan monitor port LPR dan layanan cetak LPD bawaan Windows.", "Diperlukan untuk printer jaringan lama berbasis antrean Unix/LPR.")
+        '25' = @("Pindai & Temukan Printer Aktif di Komputer Target", "Memindai dan mendaftarkan seluruh printer yang sedang di-share pada PC target.", "Mencari nama share printer yang tepat pada komputer tujuan.")
+        '26' = @("Ubah Port Printer dari WSD ke Standar TCP/IP", "Mendeteksi printer berport WSD dan memindahkannya ke port IP stabil.", "Printer sering hilang atau tiba-tiba offline karena bug penemuan WSD.")
+        '27' = @("Bersihkan Soket Koneksi Jaringan yang Nyangkut", "Merestart layanan workstation/server dan membersihkan sesi port 445/135 yang menggantung.", "Koneksi printer terblokir setelah perubahan IP atau disconnect VPN.")
+        '28' = @("Penjaga Profil Jaringan Otomatis (Rescue Network Profile)", "Memastikan status jaringan tetap Private dan memasang watchdog pencegah kembali ke Public.", "Profil jaringan sering otomatis berubah menjadi Public setelah restart.")
+        '29' = @("Tambah Port Printer Standar TCP/IP Secara Manual", "Membuat port TCP/IP baru menggunakan skrip WMI.", "Menghubungkan printer jaringan melalui alamat IP statis.")
+        '30' = @("Aktifkan Penemuan Printer WSD (Web Services on Devices)", "Mengaktifkan dan menjalankan layanan penemuan WSD (fdPHost, FDResPub, SSDPSRV) agar printer jaringan terdeteksi.", "Printer jaringan WSD/modern tidak muncul di daftar pencarian.")
+        '31' = @("Reset Layanan Spooler & Bersihkan Antrean Cetak", "Menghentikan spooler, menghapus antrean macet di folder PRINTERS, dan menyalakan kembali.", "Antrean cetak macet total dan dokumen tidak mau keluar.")
+        '32' = @("Restart Layanan Sistem RPC & DCOM", "Memeriksa dan merestart layanan inti RpcSs dan DcomLaunch.", "Muncul pesan error 'RPC server is unavailable'.")
+        '33' = @("Restart Spooler Komputer Lain dari Jarak Jauh (Remote)", "Mengeksekusi perintah restart spooler pada komputer remote via PowerShell WinRM/DCOM.", "Spooler di komputer server printer hang tanpa harus datang langsung ke lokasi.")
+        '34' = @("Atur Pemulihan Otomatis Spooler Saat Terjadi Crash", "Mengonfigurasi layanan agar otomatis restart saat mengalami kegagalan tak terduga.", "Layanan spooler sering mati mendadak saat mencetak dokumen tertentu.")
+        '35' = @("Bersihkan Dependensi Usang Layanan Spooler", "Mengembalikan parameter DependOnService ke standar aman (RPCSS, http).", "Layanan Spooler tidak mau start padahal RPC berjalan normal.")
+        '36' = @("Pasang Pemantau Spooler Otomatis (Watchdog Tiap 5 Menit)", "Mendaftarkan tugas terjadwal untuk memeriksa dan menyalakan spooler jika mendadak mati.", "Menjamin ketersediaan pencetakan di PC server kantor tanpa downtime.")
+        '37' = @("Hapus Bersih Berkas Antrean Cetak yang Rusak (.shd/.spl)", "Menghentikan paksa proses cetak dan membuang file spooler yang mengunci.", "Dokumen macet di antrean dan tidak bisa di-cancel secara normal.")
+        '38' = @("Reset Registri Dependensi Spooler ke Bawaan Pabrik", "Mereset kunci DependOnService langsung di registry HKLM.", "Spooler tetap mogok jalan bahkan setelah komputer direstart.")
+        '39' = @("Buka Manajemen Driver Windows (Print Server Properties)", "Membuka jendela GUI Properti Server Cetak untuk mengelola driver terpasang.", "Memeriksa, menambah, atau menghapus driver printer sistem.")
+        '40' = @("Matikan Isolasi Driver Printer", "Menonaktifkan IsolationPolicy agar driver berjalan di proses spooler utama.", "Mengatasi spooler crash mendadak akibat konflik isolasi driver pihak ketiga.")
+        '41' = @("Perbaiki Driver Printer Kelas Universal V4", "Memindai file PrintConfig.dll yang korup dan mendaftarkan ulang DriverStore.", "Printer berdriver V4 tiba-tiba tidak bisa mencetak atau menghasilkan teks acak.")
+        '42' = @("Ganti Mode Render Driver (PCL vs PostScript)", "Mengubah mode penerjemahan cetak antara PCL dan PostScript.", "Printer mengeluarkan kertas terus-menerus dengan karakter simbol aneh.")
+        '43' = @("Bersihkan Driver Usang & Rusak dari Sistem (Driver Sweeper)", "Memindai DriverStore via pnputil dan menghapus paket driver printer yang tertinggal.", "Gagal menginstal driver baru karena terbentur sisa driver lama.")
+        '44' = @("Hentikan Paksa Proses Driver yang Mengunci ('Driver is in use')", "Menghentikan paksa PrintIsolationHost, splwow64, dan pipeline agar file driver terlepas.", "Windows menolak menghapus driver karena dianggap masih digunakan.")
+        '45' = @("Hapus Printer Hantu & Duplikat Port USB (Ghost Copy)", "Mendeteksi dan membersihkan salinan printer ganda (Copy 1, Copy 2) dan port USB mati.", "Printer dicolok ke port USB berbeda lalu membuat printer baru yang membingungkan.")
+        '46' = @("Hapus Instalasi Printer Bermasalah Secara Paksa", "Menghapus printer yang membandel via antarmuka baris perintah printui.", "Printer rusak yang menolak dihapus melalui menu Settings/Control Panel.")
+        '47' = @("Perbaiki Masalah Cetak Aplikasi Windows & Edge (UWP)", "Mendaftarkan ulang komponen cetak modern dan memberikan pengecualian loopback.", "Bisa mencetak dari Notepad/Word, tapi gagal saat mencetak dari Edge atau aplikasi Windows.")
+        '48' = @("Pasang Ulang Printer Bawaan (Microsoft Print to PDF / XPS)", "Menginisialisasi ulang fitur pencetakan PDF dan XPS virtual bawaan Windows.", "Pilihan 'Microsoft Print to PDF' hilang dari daftar printer.")
+        '49' = @("Perbaiki Masalah Cetak Browser (Chrome / Edge Sandbox)", "Membersihkan cache dialog cetak dan menyesuaikan izin sandbox browser.", "Bisa mencetak dari aplikasi biasa, tapi dialog print di Google Chrome hang.")
+        '50' = @("Kunci Printer Default Permanen", "Mematikan fitur Windows yang mengubah printer default secara otomatis berdasarkan lokasi.", "Printer default sering berubah sendiri tanpa izin.")
+        '51' = @("Paksa Setel Printer Default via Registri", "Menetapkan printer default langsung melalui kunci registri pengguna saat ini (HKCU).", "Gagal menetapkan printer default melalui menu Settings Windows.")
+        '52' = @("Perbaiki Pengalihan Printer pada Remote Desktop (RDP)", "Mengaktifkan pengalihan printer lokal pada registri Terminal Services RDP.", "Saat login ke RDP, printer kantor lokal tidak muncul di sesi remote.")
+        '53' = @("Rapikan Nama Share Printer dari Karakter Ilegal", "Memindai nama share printer dan mengganti spasi atau simbol terlarang dengan tanda hubung.", "Komputer lain gagal terhubung karena nama printer share terlalu panjang atau berkarakter aneh.")
+        '54' = @("Longgarkan Proteksi Keamanan LSA (Legacy Auth)", "Menonaktifkan RunAsPPL pada registri LSA agar otentikasi sharing lawas diizinkan.", "Gagal login sharing printer akibat proteksi LSA Windows 11 yang terlalu ketat.")
+        '55' = @("Bypass Blokir Driver oleh Smart App Control (SAC)", "Menyesuaikan kebijakan VerifiedAndReputablePolicyState.", "Windows 11 memblokir penginstalan driver printer pihak ketiga.")
+        '56' = @("Bypass Pembatasan Driver Point and Print (Elevation Override)", "Menerapkan wildcard (*) pada ServerList dan melewati proteksi PrintNightmare.", "Muncul pesan 'Check Printer Name' atau 'Access Denied' saat mengunduh driver dari host.")
+        '57' = @("Bypass Pembatasan Token Jaringan UAC Administrator", "Mengatur LocalAccountTokenFilterPolicy = 1 di registri.", "Akses remote administrasi printer antar-komputer Workgroup gagal karena filter UAC.")
+        '58' = @("Selaraskan Respon Otentikasi NTLMv2", "Mengatur LmCompatibilityLevel secara tepat ke level NTLMv2.", "Pesan 'Access Denied' saat login antar-versi Windows atau NAS yang berbeda.")
+        '59' = @("Kelola Windows Protected Print / WPP (Mode Proteksi Driver)", "Menonaktifkan fitur WPP Windows 11 yang melarang driver v3 pihak ketiga.", "Printer tidak bisa diinstal karena Windows 11 memaksa driver standar Mopria saja.")
+        '60' = @("Simpan Kredensial Printer ke Windows Vault Permanen", "Menyimpan username dan password komputer target langsung ke Windows Credential Manager.", "Menghilangkan keharusan mengetik password setiap kali komputer dinyalakan.")
+        '61' = @("Bersihkan Kredensial Usang dari Windows Vault", "Menghapus data login komputer target yang tersimpan lama di vault via cmdkey.", "Password di komputer host sudah diganti tetapi komputer client masih memakai sandi lama.")
+        '62' = @("Bypass Pemblokiran NTLM oleh Credential Guard", "Menyesuaikan flag LsaCfgFlags pada registri Credential Guard.", "Lingkungan kerja yang mengaktifkan Credential Guard sehingga NTLM diblokir.")
+        '63' = @("Terapkan Kredensial Login ke Semua Profil Pengguna", "Memasang tugas RunOnce ke seluruh profil pengguna Windows via pemuatan NTUSER.DAT.", "PC kantor yang digunakan bergantian oleh banyak user lokal (multi-user).")
+        '64' = @("Cadangkan Registri Printer & Jaringan (Backup Registry)", "Mengekspor cabang registri Print, Policies, dan Jaringan ke C:\WindowsPrinterSharingFixBackup.", "SANGAT DISARANKAN dijalankan pertama kali sebelum melakukan perbaikan apapun!")
+        '65' = @("Pulihkan Registri dari Cadangan (Rollback Registry)", "Mengimpor kembali berkas .reg cadangan yang pernah dibuat sebelumnya.", "Mengembalikan pengaturan sistem jika terjadi masalah setelah perbaikan.")
+        '66' = @("Buat Titik Pemulihan Sistem (System Restore Point)", "Membuat System Restore Point Windows untuk perlindungan menyeluruh sistem.", "Langkah pengamanan sebelum melakukan perubahan besar pada sistem operasi.")
+        '67' = @("Pindai & Perbaiki Kerusakan Berkas Sistem (SFC & DISM)", "Menjalankan sfc /scannow dan DISM RestoreHealth untuk memperbaiki file Windows yang rusak.", "Sistem sering error aneh, blue screen, atau mengalami kerusakan file sistem.")
+        '68' = @("Restart Layanan Transfer Berkas Latar Belakang (BITS)", "Merestart Background Intelligent Transfer Service.", "Driver printer gagal terunduh secara otomatis dari jaringan.")
+        '69' = @("Kelola Pembaruan Windows & Blokir Update Perusak Printer", "Alat untuk menjeda update, mencopot patch bermasalah, atau mencegah update mereset setting.", "Mencegah Windows Update merusak kembali setelan sharing printer yang sudah normal.")
+        '70' = @("Jalankan Troubleshooter Printer Bawaan Windows", "Membuka alat pemecah masalah cetak resmi Windows (msdt).", "Langkah pemeriksaan diagnostik awal bawaan sistem.")
+        '71' = @("Paksa Status Printer Menjadi 'Online'", "Mengubah status WorkOffline printer menjadi false melalui WMI/CIM.", "Printer nyangkut dalam kondisi 'Offline' padahal kabel dan daya sudah menyala.")
+        '72' = @("Buka Jendela Layanan Windows (Services.msc)", "Membuka konsol manajemen Services Windows.", "Melihat status layanan sistem seperti Spooler, RPC, dan Workstation secara langsung.")
+        '73' = @("Deteksi Versi & Arsitektur Windows", "Menampilkan edisi OS, nomor build, serta arsitektur processor (x64 / ARM64).", "Memastikan kompatibilitas modul dengan versi Windows yang digunakan.")
+        '74' = @("Uji Ping & Pindai Port Jaringan Printer (Port 445/135)", "Melakukan tes ping ICMP serta mengecek keterbukaan port SMB (445) dan RPC (135).", "Memastikan apakah komputer printer dapat dijangkau melalui jaringan.")
+        '75' = @("Buka Catatan Log Eksekusi Tool (Log Manager)", "Membuka file log riwayat perbaikan menggunakan Notepad.", "Melihat detail setiap tindakan yang telah dilakukan oleh aplikasi ini.")
+        '76' = @("Audit 20 Log Error Terakhir Layanan Cetak", "Membaca 20 pesan error terbaru dari System Event Log Windows.", "Mencari petunjuk akar masalah kegagalan pencetakan dokumen.")
+        '77' = @("Audit Ringkas Kesehatan Sistem (System Diagnostics)", "Memeriksa status Spooler, SMB, Firewall, dan konfigurasi jaringan.", "Melihat gambaran umum kondisi sistem sebelum perbaikan.")
+        '78' = @("Analisis Event Log Layanan Print (Top 5 Error)", "Menganalisis 5 error log cetak terbaru dan memberikan saran solusi yang tepat.", "Masalah pencetakan misterius yang tidak memunculkan kode error di layar.")
+        '79' = @("Buat Laporan Diagnostik Interaktif (File HTML)", "Menyusun seluruh informasi sistem dan riwayat perbaikan ke dalam format web HTML.", "Bahan dokumentasi tim IT kantor atau laporan ke atasan.")
+        '80' = @("Pindai Intervensi Kebijakan Domain / GPO", "Memindai registri dan gpresult untuk mendeteksi kebijakan domain yang menimpa setelan.", "Perbaikan bekerja sementara tetapi rusak kembali setelah komputer direstart.")
+        '81' = @("Cadangkan / Migrasikan Konfigurasi Printer (PrintBRM)", "Mengekspor atau memulihkan konfigurasi seluruh printer menggunakan PrintBrm.exe.", "Memindahkan instalasi printer ke komputer baru secara praktis.")
+        '82' = @("Buka Akses Tamu SMB & Hilangkan Blokir Anonymous", "Mengatur AllowInsecureGuestAuth di registri LanmanWorkstation.", "Mengizinkan akses printer sharing tanpa login password di jaringan lokal.")
+        '83' = @("Solusi Khusus Windows 11 Versi Terbaru (24H2 / 25H2 / 26H2 & ARM64)", "Kombinasi perbaikan untuk kebijakan ketat Windows 11 (SMB signing, guest access, RPC Named Pipes, bypass driver blocklist).", "Gunakan jika Windows 11 Build 26000 ke atas masih menolak koneksi printer.")
+        '84' = @("ALLFIX - Jalankan 50 Perbaikan Otomatis Sekaligus", "Menjalankan 50 langkah perbaikan sistem, registri, RPC, SMB, firewall, dan spooler secara berurutan.", "REKOMENDASI UTAMA - solusi paling praktis untuk hampir semua masalah printer kantor.")
+        '85' = @("Silent ALLFIX (Perbaikan Otomatis + Langsung Restart)", "Menjalankan seluruh 50 perbaikan secara otomatis tanpa prompt lalu merestart komputer.", "Khusus situasi darurat atau penanganan massal oleh teknisi tanpa konfirmasi manual.")
+        '86' = @("Petakan Port Lokal ke Jalur UNC (Bypass Ampuh 0x00000709)", "Membuat port lokal baru yang langsung diarahkan ke path printer host (contoh: \\\\SERVER\\PRINTER).", "Solusi terbaik jika Windows menolak menghubungkan printer sharing melalui cara biasa.")
+        '87' = @("Hapus Pemetaan Port Lokal UNC yang Pernah Dibuat", "Menghapus port lokal yang sebelumnya pernah dibuat oleh opsi [86].", "Membersihkan port pemetaan yang sudah tidak terpakai atau salah ketik.")
+        '88' = @("Restart Komputer", "Merestart komputer saat ini secara langsung.", "Sangat disarankan setelah melakukan perbaikan agar seluruh perubahan sistem aktif.")
+        '89' = @("Keluar dari Aplikasi", "Menutup dan keluar dari alat perbaikan ini.", "Selesai menggunakan aplikasi.")
+    }
+
+    $helpDataEN = @{
+        '1'  = @("Fix Error 0x0000011b (RpcAuthnLevelPrivacy)", "Disables RpcAuthnLevelPrivacyEnabled registry policy to prevent RPC authentication from blocking printer connections.", "Frequently occurs after regular Windows 10/11 cumulative updates.")
+        '2'  = @("Deep Fix Error 0x00000709 (Point and Print / RPC Path)", "Multi-layer fix: RPC Named Pipes, authentication bypass, HKCU cleanup, and Point and Print elevation override.", "Persistent 0x00000709 error when connecting to shared printers. Should also be run on the Host/Server PC.")
+        '3'  = @("Bypass Error 0x00000bc4 (No Printers Found)", "Forces RPC protocol to use Named Pipes so shared printers can be discovered across the network.", "Displays 'No printers were found' even though the local network is operational.")
+        '4'  = @("Fix Error 0x80070035 (Network Path Not Found)", "Automates fdPHost, FDResPub, SSDPSRV, and upnphost services so host PC appears in Network Places.", "Target PC is invisible in Network or throws 'The network path was not found'.")
+        '5'  = @("Disable Client-Side Rendering (Error 0x000006d1)", "Enables DisableClientSideRendering in registry to offload print rendering tasks directly to the server.", "Print jobs fail due to driver rendering issues on the client side.")
+        '6'  = @("Fix Error 0x80070005 (Reset Spooler ACL Permissions)", "Resets Spool\Printers directory permissions to default using icacls with universal SID S-1-1-0 (Everyone).", "Displays 'Access Denied' when spooling or printing documents.")
+        '7'  = @("Fix Error 0x00000040 (Network Unavailable / KeepConn)", "Repairs PrintProcessor and Ports registry parameters to maintain active connection integrity.", "Displays 'The specified network name is no longer available'.")
+        '8'  = @("Fix Error 0x00000002 (CopyFilesPolicy Driver Ingestion)", "Configures CopyFilesPolicy allowing clients to download and copy printer driver files from host PC.", "Fails to clone printer driver binaries from the print server.")
+        '9'  = @("Fix Error 0x0000007e (RPC Driver Bitness Mismatch 32/64-bit)", "Aligns registry architecture for cross-platform communication between 32-bit and 64-bit endpoints.", "Cross-architecture driver incompatibility between client and server.")
+        '10' = @("Total Network Reset (DNS, Winsock, NetBIOS)", "Flushes DNS resolver cache, releases/renews IP leases, and resets Winsock catalog and NetBIOS cache.", "Network connection instability, high latency, or stale IP bindings.")
+        '11' = @("Switch Network Profiles to Private", "Converts all network adapter profiles to Private mode.", "File and printer sharing blocked because Windows classified network connection as Public.")
+        '12' = @("Disable Password Protected Network Sharing", "Configures LSA registry (limitblankpassworduse=0, everyoneincludesanonymous=1).", "Continuous login prompt even when printer sharing was configured without password requirement.")
+        '13' = @("Enforce RPC via Named Pipes & TCP", "Forces printer RPC communication through standard Named Pipes and TCP endpoints.", "Printer connections fail due to restrictive RPC protocol restrictions.")
+        '14' = @("Open Windows Firewall Rules for File & Printer Sharing", "Enables 'File and Printer Sharing' and 'Network Discovery' rule groups across all active profiles.", "Target PC cannot be reached or sharing traffic is dropped by firewall.")
+        '15' = @("Manage Legacy SMB 1.0 Protocol (ON/OFF)", "Enables or disables the legacy SMB 1.0/CIFS optional Windows feature.", "Required only when connecting to legacy network devices or older OS (Win XP/7).")
+        '16' = @("Disable SMB Signing Requirement (Fix Win 11 Access)", "Sets RequireSecuritySignature=0 on SMB client and server parameters.", "Windows 11 24H2+ fails to access shared printers or office NAS devices.")
+        '17' = @("Enforce Modern SMB2 / SMB3 Topology", "Verifies and enables SMB2/SMB3 protocol stacks.", "Keeps shared printing stable and fast over modern SMB protocols.")
+        '18' = @("Prioritize SMB in Network Provider Order", "Elevates LanmanWorkstation to the top position in system network provider order.", "Network printer sharing browsing feels sluggish or delayed.")
+        '19' = @("Disable IPv6 Protocol Stack", "Disables IPv6 via registry bindings and netsh adapter properties.", "IPv6 priority causes routing delays on pure IPv4 office local networks.")
+        '20' = @("Enable Discovery Protocols (mDNS & LLMNR)", "Enables Multicast DNS and Link-Local Multicast Name Resolution.", "Printer cannot be found by hostname or computer name.")
+        '21' = @("Open WSD Firewall Port (UDP 3702)", "Opens UDP port 3702 on Windows Firewall specifically for Web Services Discovery.", "WSD network printer discovery is blocked by firewall policy.")
+        '22' = @("Install IPP & Mopria Print Sharing Foundation", "Installs Internet Printing Client and standard Mopria framework.", "Required by modern network printers utilizing driverless IPP protocols.")
+        '23' = @("Resolve Hyper-V / WSL Virtual Adapter Conflicts", "Disables printer sharing binding on internal virtual switches.", "Virtual Hyper-V or WSL adapters misroute LAN printer discovery traffic.")
+        '24' = @("Install Legacy LPR / LPD Protocol Features", "Enables Windows built-in LPR Port Monitor and LPD Print Service.", "Required for legacy Unix/Linux style line printer queue network devices.")
+        '25' = @("Scan & Discover Active Printers on Target Host", "Queries and enumerates all published shared printers on a specified remote host.", "Discovers exact share names when browsing fails via Windows GUI.")
+        '26' = @("Convert WSD Printer Port to Standard TCP/IP", "Detects WSD-based ports and rebinds the printer to a stable IP socket.", "Printer randomly drops offline due to WSD discovery timeouts.")
+        '27' = @("Purge Stale Network Connection Sockets", "Restarts Workstation/Server services and clears lingering sessions on ports 445/135.", "Printer connection deadlocked after IP change or VPN disconnection.")
+        '28' = @("Rescue Network Profile (Auto-Enforce Private)", "Ensures current profile is Private and registers a scheduled task to prevent reverts.", "Windows periodically reverts network connection to Public after rebooting.")
+        '29' = @("Add Standard TCP/IP Printer Port Manually", "Creates a new raw standard TCP/IP printer port using WMI scripting.", "Directly connects network printers via static IP address.")
+        '30' = @("Enable WSD Printer Discovery Services", "Starts and configures WSD discovery services (fdPHost, FDResPub, SSDPSRV) so modern network printers are discovered.", "WSD network printers missing from Windows discovery wizard.")
+        '31' = @("Reset Spooler & Purge Print Queue", "Stops spooler, purges stuck documents in PRINTERS folder, and cleanly restarts.", "Print queue completely frozen with stuck documents refusing to cancel.")
+        '32' = @("Restart Core RPC & DCOM Services", "Audits and restarts foundational RpcSs and DcomLaunch services.", "Displays 'The RPC server is unavailable' during printer access.")
+        '33' = @("Restart Remote Spooler on Network Host", "Executes remote spooler restart on target computer via PowerShell WinRM/DCOM.", "Restarts printer server spooler remotely without physical access.")
+        '34' = @("Configure Spooler Auto-Restart on Crash", "Configures service recovery parameters to restart spooler immediately upon failure.", "Print spooler terminates unexpectedly when receiving corrupted print jobs.")
+        '35' = @("Clean Stale Spooler Service Dependencies", "Restores DependOnService configuration to safe baseline defaults (RPCSS, http).", "Spooler refuses to start even though RPC is active.")
+        '36' = @("Deploy Spooler Watchdog Task (5-Minute Health Check)", "Registers scheduled task monitoring spooler health every 5 minutes.", "Ensures office print servers maintain 24/7 uptime without manual intervention.")
+        '37' = @("Forcibly Purge Damaged Queue Files (.shd/.spl)", "Forcibly terminates locked processes and unlinks corrupted spool shadow files.", "Jammed print job refuses to delete through normal Windows queue.")
+        '38' = @("Reset Spooler Registry Dependencies to Factory Default", "Resets DependOnService values directly in HKLM registry hive.", "Spooler fails to start across system reboots.")
+        '39' = @("Open Print Server Properties Management", "Launches Windows Print Server Properties GUI to audit installed drivers.", "Review, add, or remove system-wide printer drivers and custom forms.")
+        '40' = @("Disable Print Driver Isolation Policy", "Sets IsolationPolicy to 0 ensuring drivers execute within the main spooler process.", "Resolves random spooler crashes caused by third-party driver isolation sandboxes.")
+        '41' = @("Repair V4 Universal Print Class Drivers", "Scans for corrupted PrintConfig.dll and re-registers DriverStore manifests.", "V4 drivers suddenly output garbage characters or fail silently.")
+        '42' = @("Switch Driver Render Mode (PCL vs PostScript)", "Adjusts rendering translation modes between PCL and PostScript.", "Printer spits out endless blank pages containing bizarre symbols.")
+        '43' = @("Clean Stale & Corrupt Drivers (Driver Sweeper)", "Scans DriverStore via pnputil and deletes orphaned OEM driver packages.", "Unable to update or reinstall driver due to lingering conflicting files.")
+        '44' = @("Force-Kill Locking Driver Processes ('Driver in use')", "Terminates PrintIsolationHost, splwow64, and pipeline handles to unlock files.", "Windows refuses to delete driver claiming files are currently in use.")
+        '45' = @("Remove Ghost & Duplicate USB Printers (Ghost Copy)", "Cleans duplicate copies (Copy 1, Copy 2) and removes dead USB virtual ports.", "Printer plugged into different USB port created confusing duplicate devices.")
+        '46' = @("Force-Uninstall Problematic Printer Instance", "Removes persistent printer instances using the printui command-line engine.", "Printer cannot be deleted via Windows Settings or Control Panel.")
+        '47' = @("Fix Modern Windows & Edge App Printing (UWP)", "Re-registers modern print components and configures AppContainer loopback.", "Can print from Word/Notepad, but printing fails from Edge or Store apps.")
+        '48' = @("Reinstall Virtual Printers (Print to PDF / XPS)", "Reinitializes Windows built-in PDF and XPS virtual print features.", "'Microsoft Print to PDF' option is missing from the printer selection list.")
+        '49' = @("Fix Web Browser Print Dialog (Chrome / Edge Sandbox)", "Cleans print preview cache and adjusts browser sandbox permissions.", "Print dialog in Google Chrome or Microsoft Edge freezes indefinitely.")
+        '50' = @("Lock Default Printer Permanently", "Disables Windows automatic default printer management based on network.", "Default printer unexpectedly switches on its own.")
+        '51' = @("Force Default Printer via Registry", "Assigns default printer directly in current user registry hive (HKCU).", "Fails to set default printer through standard Settings GUI.")
+        '52' = @("Fix Printer Redirection on Remote Desktop (RDP)", "Enables local printer redirection in Terminal Services RDP client registry.", "Office local printer does not appear inside remote desktop sessions.")
+        '53' = @("Sanitize Printer Share Names (Strip Illegal Characters)", "Scans shared names and replaces spaces and illegal symbols with hyphens.", "Clients fail to connect because share name exceeds limits or has bad characters.")
+        '54' = @("Relax Strict LSA Security Protection (Legacy Auth)", "Disables RunAsPPL on LSA registry to permit legacy sharing authentication.", "Windows 11 strict LSA policies block non-domain printer sharing logins.")
+        '55' = @("Bypass Driver Block by Smart App Control (SAC)", "Adjusts VerifiedAndReputablePolicyState configuration.", "Windows 11 blocks installation of uncertified third-party printer drivers.")
+        '56' = @("Bypass Point and Print Restrictions (Elevation Override)", "Sets wildcard (*) on ServerList and overrides PrintNightmare admin prompts.", "Displays 'Check Printer Name' or 'Access Denied' downloading drivers from host.")
+        '57' = @("Bypass UAC Administrator Network Token Filter", "Sets LocalAccountTokenFilterPolicy=1 in registry.", "Remote administration between Workgroup PCs fails due to UAC token filtering.")
+        '58' = @("Align NTLMv2 Authentication Response", "Sets LmCompatibilityLevel correctly to NTLMv2 response standard.", "'Access Denied' when authenticating between heterogeneous Windows versions or NAS.")
+        '59' = @("Manage Windows Protected Print / WPP (Driver Protection)", "Disables WPP mode which blocks third-party v3 printer drivers in modern Windows.", "Printer cannot be installed because Windows 11 enforces Mopria-only drivers.")
+        '60' = @("Save Printer Credentials to Windows Vault (Permanent Login)", "Stores target host credentials directly into Windows Credential Manager.", "Eliminates having to re-enter credentials every time computer reboots.")
+        '61' = @("Clean Stale Credentials from Windows Vault", "Purges stored obsolete credentials using cmdkey.", "Password was changed on host PC but client still sends obsolete credentials.")
+        '62' = @("Bypass NTLM Blocking by Credential Guard", "Configures LsaCfgFlags registry parameter under Credential Guard.", "Corporate environments with active Credential Guard blocking NTLM sharing.")
+        '63' = @("Deploy Login Credentials to All User Profiles", "Installs RunOnce task across all user profiles via NTUSER.DAT loading.", "Shared office computers used by multiple local user accounts.")
+        '64' = @("Backup Printer & Network Registry (Backup Registry)", "Exports Print, Policies, and Network registry hives to C:\WindowsPrinterSharingFixBackup.", "HIGHLY RECOMMENDED as the very first step before applying changes!")
+        '65' = @("Rollback Registry from Previous Backup", "Imports previously exported .reg backup snapshots back into the system.", "Restores original system state if any issues occur after repairs.")
+        '66' = @("Create System Restore Point", "Creates a full Windows System Restore Point for system rollback.", "Safety milestone before major system-wide modifications.")
+        '67' = @("Scan & Repair System Files (SFC & DISM)", "Runs sfc /scannow and DISM RestoreHealth to repair corrupted Windows files.", "System experiences unexpected blue screens, crashes, or file corruption.")
+        '68' = @("Restart Background Intelligent Transfer Service (BITS)", "Restarts BITS service to unblock background file transfers.", "Printer drivers fail to download automatically across the network.")
+        '69' = @("Manage Windows Updates & Block Printer-Breaking Patches", "Pauses updates, uninstalls problematic patches, or blocks update regressions.", "Prevents Windows Update from breaking printer sharing configurations.")
+        '70' = @("Run Built-in Windows Printer Troubleshooter", "Launches the official Windows printing diagnostics wizard (msdt).", "Initial baseline troubleshooting provided natively by Windows.")
+        '71' = @("Force Printer Status to 'Online'", "Forces WorkOffline flag to false via WMI/CIM provider.", "Printer stays stuck in 'Offline' status despite being powered on and connected.")
+        '72' = @("Open Windows Services Console (services.msc)", "Launches services.msc to inspect services directly.", "Directly check status of Spooler, RPC, Workstation, and Server services.")
+        '73' = @("Detect Windows Version & Architecture", "Displays OS edition, build number, and processor architecture (x64 / ARM64).", "Ensures module compatibility with current Windows environment.")
+        '74' = @("Test Connectivity & Scan Printer Ports (Ping & Port 135/445)", "Performs ICMP ping and tests TCP port availability on SMB (445) and RPC (135).", "Confirms if print host computer is accessible across the network.")
+        '75' = @("Open Tool Execution Log File (Log Manager)", "Opens execution log history using Notepad.", "Inspect details of every action performed by this utility.")
+        '76' = @("Audit Last 20 Print Service Error Events", "Retrieves 20 most recent error entries from Windows System Event Log.", "Identifies root cause of printer communication and spooling failures.")
+        '77' = @("Quick System Health & Diagnostics Audit", "Audits Spooler, SMB, Firewall, and network profile configuration.", "Provides quick high-level overview of system status before repairs.")
+        '78' = @("Analyze Print Service Event Logs (Top 5 Errors)", "Analyzes top 5 print service error codes and recommends targeted fixes.", "Unusual printing failures that do not provide clear error messages.")
+        '79' = @("Generate Interactive HTML Diagnostic Report", "Collects system state and repair log into a single HTML document.", "Documentation for office IT technicians or submission to management.")
+        '80' = @("Scan Active Directory / GPO Intervention", "Scans registry and gpresult for corporate domain policies overriding settings.", "Repairs work temporarily but revert after system reboot due to domain GPO.")
+        '81' = @("Backup / Migrate Printer Configurations (PrintBRM)", "Exports or restores all printer configurations and drivers using PrintBrm.exe.", "Migrates entire printer setups to another computer.")
+        '82' = @("Open SMB Guest Access & Remove Anonymous Blocks", "Sets AllowInsecureGuestAuth on LanmanWorkstation registry.", "Allows shared printer access without requiring password login on local LAN.")
+        '83' = @("Extreme Path for Modern Windows 11 (24H2 / 25H2 / 26H2 & ARM64)", "Combined fix for strict Win 11 policies (SMB, RPC, SAC, WPP).", "Essential if Windows 11 Build 26000+ still rejects network printer connections.")
+        '84' = @("ALLFIX - Run 50 Automated Fixes Simultaneously", "Runs 50 sequential system, registry, RPC, SMB, firewall, and spooler fixes.", "PRIMARY RECOMMENDATION - the ultimate one-click fix for network printer sharing.")
+        '85' = @("Silent ALLFIX (Automated Fixes + Immediate Reboot)", "Runs all 50 automated fixes without interactive prompts and immediately reboots.", "Designed for technicians or automated mass deployments.")
+        '86' = @("Map Local Port to UNC Share (Ultimate 0x00000709 Bypass)", "Creates a local printer port pointing directly to host UNC share (e.g. \\\\SERVER\\PRINTER).", "Ultimate solution when Windows rejects normal printer sharing connections.")
+        '87' = @("Remove Mapped Local UNC Port", "Deletes previously created local UNC port mapping created by option [86].", "Cleans up outdated or mistyped UNC port mappings.")
+        '88' = @("Restart Computer", "Reboots local computer immediately.", "Highly recommended after applying fixes so all system settings take full effect.")
+        '89' = @("Exit Application", "Closes and exits this utility.", "Done using the application.")
+    }
+    $helpData = switch ($script:lang) {
+        "ZH" { if (Test-Path variable:helpDataZH) { $helpDataZH } else { $helpDataEN } }
+        "EN" { $helpDataEN }
+        default { $helpDataID }
     }
 
     if ($Topic -eq "" -or $Topic.ToLower() -eq "menu" -or $Topic.ToLower() -eq "help") {
         cls
         Write-Host ""
         Write-Host "  ======================================================================================" -ForegroundColor Cyan
-        Write-Host "      使用指南：Windows 打印机共享修复工具 - @KHAIRUDINFAHMI（汉化版）" -ForegroundColor Green
-        Write-Host "  ======================================================================================" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "  使用方法：" -ForegroundColor Yellow
-        Write-Host "    - 输入功能编号 (1-89) 并按回车"
-        Write-Host "    - '7' 和 '07' 均有效"
-        Write-Host "    - 输入 '?' 显示本指南"
-        Write-Host "    - 输入 '? 7' 查看功能 7 的详细说明"
-        Write-Host "    - 输入 '? all' 打开完整 HTML 文档"
-        Write-Host ""
-        Write-Host "  新手工作流（标准执行）：" -ForegroundColor Yellow
-        Write-Host "    1. 执行 [64] 备份注册表（必做）" -ForegroundColor White
-        Write-Host "    2. 执行 [84] 全部修复（50 项自动步骤）" -ForegroundColor White
-        Write-Host "    3. 重启系统" -ForegroundColor White
-        Write-Host "    4. 验证打印机共享访问" -ForegroundColor White
-        Write-Host ""
-        Write-Host "  Win 11 24H2+ 工作流（Build 26000+）：" -ForegroundColor Yellow
-        Write-Host "    1. 执行 [64] 备份注册表" -ForegroundColor White
-        Write-Host "    2. 执行 [83] 极端修复路径" -ForegroundColor White
-        Write-Host "    3. 重启系统" -ForegroundColor White
-        Write-Host ""
-        Write-Host "  紧急方案（快速自动修复）：" -ForegroundColor Yellow
-        Write-Host "    - 执行 [85] 静默全部修复（警告：会自动重启！）" -ForegroundColor White
-        Write-Host ""
-        Write-Host "  功能分类：" -ForegroundColor Yellow
-        Write-Host "    [01-09] 错误代码修复 (0x0000011b, 0x00000709, 0x00000bc4, 0x80070035, 0x000006d1, 0x00000040, 0x00000002, 0x0000007e)" -ForegroundColor Cyan
-        Write-Host "    [10-30] 网络与共享配置 (DNS, SMB, 防火墙, WSD, IPP)" -ForegroundColor Cyan
-        Write-Host "    [31-38] 后台处理程序管理 (重置, RPC, 恢复, 监视, 清除)" -ForegroundColor Cyan
-        Write-Host "    [39-53] 驱动与打印 (隔离, V4, PCL, 幽灵, PDF, RDP)" -ForegroundColor Cyan
-        Write-Host "    [54-59] 安全与策略 (LSA, SAC, UAC, NTLMv2, WPP)" -ForegroundColor Cyan
-        Write-Host "    [60-69] 凭据与系统 (凭据管理器, 备份, SFC, BITS, KB)" -ForegroundColor Cyan
-        Write-Host "    [70-81] 诊断与工具 (疑难解答, 日志, GPO, BRM)" -ForegroundColor Green
-        Write-Host "    [82-89] 特殊操作 (极端修复, 全部修复, 本地 UNC, 清除 UNC, 静默全部修复)" -ForegroundColor Green
-
-        Write-Host ""
-        Write-Host "  快速故障排除：" -ForegroundColor Yellow
-        Write-Host "    - 持续提示输入密码？            -> 执行 [12]、[60]、[82]" -ForegroundColor White
-        Write-Host "    - 「拒绝访问」（持续）？         -> 使用 [60] 注入目标 IP 和凭据。" -ForegroundColor White
-        Write-Host "    - 「检查打印机名称」通用错误？   -> 执行 [56] 或 [86]" -ForegroundColor White
-        Write-Host "    - 打印机已开机但仍显示脱机？     -> 执行 [71]" -ForegroundColor White
-        Write-Host "    - 网络上看不到主机？             -> 执行 [04]、[11]、[14]" -ForegroundColor White
-        Write-Host "    - Edge/UWP 打印失败？            -> 执行 [47]" -ForegroundColor White
-        Write-Host "    - 需要回滚所有更改？             -> 执行 [65]" -ForegroundColor White
-        Write-Host ""
+        switch ($script:lang) {
+            "ZH" {
+                Write-Host "      使用指南:Windows 打印机共享修复工具 - @KHAIRUDINFAHMI" -ForegroundColor Green
+                Write-Host "  ======================================================================================" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host "  使用方法:" -ForegroundColor Yellow
+                Write-Host "    - 输入分类编号 (1 - 9) 打开对应的修复子菜单。"
+                Write-Host "    - 也可以直接输入经典模块代码(例如 '84'、'83'、'64'、'86')。"
+                Write-Host "    - 随时输入 'L' 可在 简体中文 / English / Bahasa Indonesia 之间切换语言。"
+                Write-Host "    - 随时输入 '?' 可查看本指南。"
+                Write-Host "    - 输入 '? <编号>' (例如 '? 84' 或 '? 86') 可查看任一模块的详细说明。"
+                Write-Host "    - 输入 '? all' 可在默认浏览器中打开完整 HTML 文档。"
+                Write-Host ""
+                Write-Host "  办公电脑推荐步骤(标准流程):" -ForegroundColor Yellow
+                Write-Host "    1. 备份注册表 [菜单 8 -> 1 或输入 64](强烈推荐)" -ForegroundColor White
+                Write-Host "    2. 运行 ALLFIX [菜单 1 -> 1 或输入 84](执行 50 项自动修复)" -ForegroundColor White
+                Write-Host "    3. 重启电脑 [菜单 0 或输入 88]" -ForegroundColor White
+                Write-Host "    4. 重新连接共享网络打印机。" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  适用于 Windows 11 24H2 / 25H2 / 26H2+ 及以上版本 (Build 26000+):" -ForegroundColor Yellow
+                Write-Host "    1. 备份注册表 [菜单 8 -> 1 或输入 64]" -ForegroundColor White
+                Write-Host "    2. 运行 Windows 11 专属方案 [菜单 1 -> 2 或输入 83]" -ForegroundColor White
+                Write-Host "    3. 重启电脑。" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  快速故障排查速查表:" -ForegroundColor Yellow
+                Write-Host "    - 一直提示输入密码?-> 运行菜单 3 -> 2(或输入 12 和 82)" -ForegroundColor White
+                Write-Host "    - 提示“拒绝访问”(Access Denied)?-> 通过菜单 6 -> 1 保存凭据(输入 60)" -ForegroundColor White
+                Write-Host "    - 提示“检查打印机名称”/ 错误 0x709?-> 通过菜单 7 -> 1 映射本地端口 UNC(输入 86)" -ForegroundColor White
+                Write-Host "    - 打印机一直处于离线状态?-> 通过菜单 8 -> 10 强制设为在线(输入 71)" -ForegroundColor White
+                Write-Host "    - 网络中看不到电脑?-> 运行菜单 3 -> 1 和菜单 3 -> 5" -ForegroundColor White
+                Write-Host "    - 想恢复之前的设置?-> 通过菜单 8 -> 2 运行注册表回滚(输入 65)" -ForegroundColor White
+                Write-Host ""
+            }
+            "EN" {
+                Write-Host "      USER GUIDE: Windows Printer Sharing Fix - @KHAIRUDINFAHMI" -ForegroundColor Green
+                Write-Host "  ======================================================================================" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host "  HOW TO USE THIS UTILITY:" -ForegroundColor Yellow
+                Write-Host "    - Choose a category number (1 - 9) to open targeted repair submenus."
+                Write-Host "    - You can also type classic module codes directly (e.g. '84', '83', '64', '86')."
+                Write-Host "    - Type 'L' at any time to switch language between Indonesian and English."
+                Write-Host "    - Type '?' to view this guide at any time."
+                Write-Host "    - Type '? <number>' (e.g. '? 84' or '? 86') to view details of any module."
+                Write-Host "    - Type '? all' to open complete HTML documentation in your default browser."
+                Write-Host ""
+                Write-Host "  RECOMMENDED STEPS FOR OFFICE WORKSTATIONS (Standard Flow):" -ForegroundColor Yellow
+                Write-Host "    1. Run Backup Registry [Menu 8 -> 1 or type 64] (Highly Recommended)" -ForegroundColor White
+                Write-Host "    2. Run ALLFIX [Menu 1 -> 1 or type 84] (Applies 50 automated fixes)" -ForegroundColor White
+                Write-Host "    3. Restart your computer [Menu 0 or type 88]" -ForegroundColor White
+                Write-Host "    4. Connect to your shared network printer again." -ForegroundColor White
+                Write-Host ""
+                Write-Host "  STEPS FOR MODERN WINDOWS 11 24H2 / 25H2 / 26H2+ (Build 26000 and above):" -ForegroundColor Yellow
+                Write-Host "    1. Run Backup Registry [Menu 8 -> 1 or type 64]" -ForegroundColor White
+                Write-Host "    2. Run Win 11 Solution [Menu 1 -> 2 or type 83]" -ForegroundColor White
+                Write-Host "    3. Restart your computer." -ForegroundColor White
+                Write-Host ""
+                Write-Host "  QUICK TROUBLESHOOTING CHEATSHEET:" -ForegroundColor Yellow
+                Write-Host "    - Continuously asking for password? -> Run Menu 3 -> 2 (or type 12 & 82)" -ForegroundColor White
+                Write-Host "    - 'Access Denied' error message?     -> Save Credentials via Menu 6 -> 1 (type 60)" -ForegroundColor White
+                Write-Host "    - 'Check Printer Name' / Error 0x709? -> Map Local Port UNC via Menu 7 -> 1 (type 86)" -ForegroundColor White
+                Write-Host "    - Printer stuck in offline status?   -> Force Online via Menu 8 -> 10 (type 71)" -ForegroundColor White
+                Write-Host "    - Computer not visible in Network?   -> Run Menu 3 -> 1 & Menu 3 -> 5" -ForegroundColor White
+                Write-Host "    - Want to restore previous settings? -> Run Registry Rollback via Menu 8 -> 2 (type 65)" -ForegroundColor White
+                Write-Host ""
+            }
+            default {
+                Write-Host "      PANDUAN PENGGUNAAN: Windows Printer Sharing Fix - @KHAIRUDINFAHMI" -ForegroundColor Green
+                Write-Host "  ======================================================================================" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host "  CARA MENGGUNAKAN APLIKASI:" -ForegroundColor Yellow
+                Write-Host "    - Pilih nomor kategori (1 - 9) untuk membuka submenu perbaikan terarah."
+                Write-Host "    - Anda juga bisa langsung mengetik kode modul klasik (misal: '84', '83', '64', '86')."
+                Write-Host "    - Ketik 'L' kapan saja untuk berganti bahasa antara Indonesia dan Inggris."
+                Write-Host "    - Ketik '?' untuk melihat panduan ini kapan saja."
+                Write-Host "    - Ketik '? <nomor>' (contoh: '? 84' atau '? 86') untuk melihat fungsi modul tersebut."
+                Write-Host "    - Ketik '? all' untuk membuka dokumentasi lengkap dalam format HTML di browser."
+                Write-Host ""
+                Write-Host "  LANGKAH REKOMENDASI UNTUK PENGGUNA KANTOR (Solusi Standar):" -ForegroundColor Yellow
+                Write-Host "    1. Jalankan Cadangkan Registri [Menu 8 -> 1 atau ketik 64] (Sangat Disarankan)" -ForegroundColor White
+                Write-Host "    2. Jalankan ALLFIX [Menu 1 -> 1 atau ketik 84] (Menjalankan 50 perbaikan otomatis)" -ForegroundColor White
+                Write-Host "    3. Restart komputer Anda [Menu 0 atau ketik 88]" -ForegroundColor White
+                Write-Host "    4. Coba sambungkan kembali printer di jaringan." -ForegroundColor White
+                Write-Host ""
+                Write-Host "  LANGKAH UNTUK WINDOWS 11 24H2 / 25H2 / 26H2+ (Build 26000 ke atas):" -ForegroundColor Yellow
+                Write-Host "    1. Jalankan Cadangkan Registri [Menu 8 -> 1 atau ketik 64]" -ForegroundColor White
+                Write-Host "    2. Jalankan Solusi Khusus Windows 11 [Menu 1 -> 2 atau ketik 83]" -ForegroundColor White
+                Write-Host "    3. Restart komputer Anda." -ForegroundColor White
+                Write-Host ""
+                Write-Host "  PANDUAN CEPAT BERDASARKAN KELUHAN:" -ForegroundColor Yellow
+                Write-Host "    - Selalu minta password padahal tanpa password? -> Jalankan Menu 3 -> 2 (atau ketik 12 & 82)" -ForegroundColor White
+                Write-Host "    - Muncul error 'Access Denied' / Akses Ditolak?  -> Simpan Kredensial via Menu 6 -> 1 (ketik 60)" -ForegroundColor White
+                Write-Host "    - Muncul error 'Check Printer Name' / 0x709?    -> Gunakan Pemetaan Port UNC via Menu 7 -> 1 (ketik 86)" -ForegroundColor White
+                Write-Host "    - Printer offline terus padahal kabel menyala?  -> Paksa Online via Menu 8 -> 10 (ketik 71)" -ForegroundColor White
+                Write-Host "    - Komputer printer tidak muncul di Network?     -> Jalankan Menu 3 -> 1 & Menu 3 -> 5" -ForegroundColor White
+                Write-Host "    - Ingin mengembalikan setelan seperti semula?   -> Jalankan Rollback via Menu 8 -> 2 (ketik 65)" -ForegroundColor White
+                Write-Host ""
+            }
+        }
         Write-Host "  ======================================================================================" -ForegroundColor Cyan
     }
     elseif ($Topic.ToLower() -eq "all") {
         $docPath = $null
-
         try {
             $exeDir = Split-Path ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName) -Parent
             $searchPaths = @(
@@ -2797,13 +3252,13 @@ function Detect-Win {
             catch {}
         }
         if ($docPath -and (Test-Path $docPath)) {
-            Write-Host "  [*] 正在打开完整 HTML 文档..." -ForegroundColor Cyan
+            Write-Host $(switch ($script:lang) { "ZH" { "  [*] 正在浏览器中打开 HTML 文档..." } "EN" { "  [*] Opening HTML documentation in browser..." } default { "  [*] Membuka dokumentasi lengkap HTML di browser..." } }) -ForegroundColor Cyan
             $fileUrl = "file:///" + $docPath.Replace("\", "/") + "?all"
             Start-Process $fileUrl
         }
         else {
-            Write-Host "  [-] 安装目录中未检测到 documentation.html 文件。" -ForegroundColor Red
-            Write-Host "  [!] 使用 '?' 查看快速指南，或使用 '? <数字>' 查看功能详情。" -ForegroundColor Yellow
+            Write-Host $(switch ($script:lang) { "ZH" { "  [-] 安装目录中未找到 documentation.html。" } "EN" { "  [-] documentation.html not found in installation directory." } default { "  [-] File documentation.html tidak ditemukan pada direktori instalasi." } }) -ForegroundColor Red
+            Write-Host $(switch ($script:lang) { "ZH" { "  [!] 使用 '?' 查看快速帮助,或用 '? <编号>' 查看具体模块信息。" } "EN" { "  [!] Use '?' for quick help or '? <number>' for specific module info." } default { "  [!] Gunakan '?' untuk bantuan ringkas atau '? <nomor>' untuk info fitur spesifik." } }) -ForegroundColor Yellow
         }
     }
     else {
@@ -2812,276 +3267,1001 @@ function Detect-Win {
             $h = $helpData[$num]
             Write-Host ""
             Write-Host "  ======================================================================================" -ForegroundColor Cyan
-            Write-Host "      帮助：功能 [$Topic]" -ForegroundColor Green
+            Write-Host $(switch ($script:lang) { "ZH" { "      模块信息 [$Topic]" } "EN" { "      MODULE INFORMATION [$Topic]" } default { "      INFORMASI MODUL [$Topic]" } }) -ForegroundColor Green
             Write-Host "  ======================================================================================" -ForegroundColor Cyan
             Write-Host ""
-            Write-Host "  名称     ：$($h[0])" -ForegroundColor Yellow
+            Write-Host $(switch ($script:lang) { "ZH" { "  模块名称 : $($h[0])" } "EN" { "  MODULE NAME : $($h[0])" } default { "  NAMA MODUL : $($h[0])" } }) -ForegroundColor Yellow
             Write-Host ""
-            Write-Host "  功能说明 ：$($h[1])" -ForegroundColor White
+            Write-Host $(switch ($script:lang) { "ZH" { "  功能说明 : $($h[1])" } "EN" { "  FUNCTION    : $($h[1])" } default { "  FUNGSI     : $($h[1])" } }) -ForegroundColor White
             Write-Host ""
             if ($h[2] -ne "") {
-                Write-Host "  适用场景 ：$($h[2])" -ForegroundColor Cyan
+                Write-Host $(switch ($script:lang) { "ZH" { "  适用场景 : $($h[2])" } "EN" { "  USAGE       : $($h[2])" } default { "  PENGGUNAAN : $($h[2])" } }) -ForegroundColor Cyan
             }
             Write-Host ""
             Write-Host "  ======================================================================================" -ForegroundColor Cyan
         }
         else {
-            Write-Host "  [-] 未找到功能编号 '$Topic'。请输入 1-89。" -ForegroundColor Red
+            Write-Host $(switch ($script:lang) { "ZH" { "  [-] 找不到模块编号 '$Topic'。请输入 1 到 89 之间的数字。" } "EN" { "  [-] Module number '$Topic' not found. Enter a number between 1 and 89." } default { "  [-] Nomor modul '$Topic' tidak ditemukan. Masukkan angka 1-89." } }) -ForegroundColor Red
         }
     }
-}function Show-Menu {
+}
+
+function Clear-Screen {
+    try { [System.Console]::Clear() } catch { try { Clear-Host } catch {} }
+}
+
+function Invoke-SystemReboot {
+    try {
+        Restart-Computer -Force -ErrorAction Stop
+    } catch {
+        try {
+            & shutdown.exe /r /t 0 /f > $null 2>&1
+        } catch {
+            Write-Log "Failed to trigger automatic reboot: $($_.Exception.Message)" -Type "WARNING"
+            Write-Host "  [-] Please reboot your computer manually." -ForegroundColor Yellow
+        }
+    }
+}
+
+function Pause-User {
+    Write-Host ""
+    switch ($script:lang) {
+        "ZH" {
+            Write-Host "  [>] 按回车键返回..." -ForegroundColor Yellow
+        }
+        "EN" {
+            Write-Host "  [>] Press ENTER to return..." -ForegroundColor Yellow
+        }
+        default {
+            Write-Host "  [>] Tekan ENTER untuk kembali..." -ForegroundColor Yellow
+        }
+    }
+    try {
+        [void][System.Console]::ReadLine()
+    } catch {
+        try { [void](Read-Host) } catch {}
+    }
+}
+
+function Show-Header {
+    param([string]$SubTitle = "")
     cls
     $winName = "$script:productName $script:buildNumber".ToUpper()
     if ($script:isARM64) { $winName += " ARM64" }
-    elseif ([Environment]::Is64BitOperatingSystem) { $winName += " 64位" }
-    else { $winName += " 32位" }
+    elseif ([Environment]::Is64BitOperatingSystem) { $winName += " 64-BIT" }
+    else { $winName += " 32-BIT" }
 
-    Write-Host " 用户: " -NoNewline
-    Write-Host "$env:USERNAME " -ForegroundColor Green -NoNewline
-    Write-Host "| 计算机名: " -NoNewline
-    Write-Host "$env:COMPUTERNAME " -ForegroundColor Green -NoNewline
-    Write-Host "| 系统: " -NoNewline
-    Write-Host "$winName " -ForegroundColor Blue -NoNewline
-    Write-Host "| Windows 打印机共享修复工具 v2.3.2" -ForegroundColor Green
+    $health = Get-SystemHealthSummary
 
-    Write-Host " 时区: " -NoNewline
-    Write-Host "$(Get-TimeZone | Select-Object -ExpandProperty Id) | $(Get-Date -Format 'HH.mm.ss')" -ForegroundColor Red
-    Write-Host " 作者: @KHAIRUDINFAHMI (2026) | 汉化版" -ForegroundColor Magenta
-    Write-Host ("=" * 175) -ForegroundColor DarkGray
+    $line = "=" * 86
+    Write-Host $line -ForegroundColor Cyan
+    switch ($script:lang) {
+        "ZH" {
+            Write-Host "   Windows 打印机共享修复工具  |  网络打印机修复工具" -ForegroundColor Green
+            Write-Host "   版本: $script:version  |  系统: $winName" -ForegroundColor Cyan
+            Write-Host "   计算机: $env:COMPUTERNAME  |  用户: $env:USERNAME" -ForegroundColor Gray
+            if ($SubTitle) {
+                Write-Host "   分类: $SubTitle" -ForegroundColor Yellow
+            }
+            Write-Host "   系统状态: " -NoNewline -ForegroundColor Gray
+            if ($health.Spooler) { Write-Host "后台打印程序 [运行中] " -ForegroundColor Green -NoNewline } else { Write-Host "后台打印程序 [已停止] " -ForegroundColor Red -NoNewline }
+            Write-Host "| " -NoNewline -ForegroundColor DarkGray
+            if ($health.Network) { Write-Host "网络 [专用] " -ForegroundColor Green -NoNewline } else { Write-Host "网络 [公用 - 需修复] " -ForegroundColor Red -NoNewline }
+            Write-Host "| " -NoNewline -ForegroundColor DarkGray
+            if ($health.SMBSigning) { Write-Host "SMB 签名 [正常] " -ForegroundColor Green -NoNewline } else { Write-Host "SMB 签名 [强制 - 可能阻止] " -ForegroundColor Yellow -NoNewline }
+            Write-Host "| " -NoNewline -ForegroundColor DarkGray
+            if ($health.PasswordSharing) { Write-Host "密码共享 [关闭]" -ForegroundColor Green } else { Write-Host "密码共享 [开启 - 需登录]" -ForegroundColor Yellow }
+        }
+        "EN" {
+            Write-Host "   WINDOWS PRINTER SHARING FIX  |  Windows Network Printer Repair Tool" -ForegroundColor Green
+            Write-Host "   Version: $script:version  |  System: $winName" -ForegroundColor Cyan
+            Write-Host "   Computer: $env:COMPUTERNAME  |  User: $env:USERNAME" -ForegroundColor Gray
+            if ($SubTitle) {
+                Write-Host "   Category: $SubTitle" -ForegroundColor Yellow
+            }
+            Write-Host "   STATUS: " -NoNewline -ForegroundColor Gray
+            if ($health.Spooler) { Write-Host "Spooler [RUNNING] " -ForegroundColor Green -NoNewline } else { Write-Host "Spooler [STOPPED] " -ForegroundColor Red -NoNewline }
+            Write-Host "| " -NoNewline -ForegroundColor DarkGray
+            if ($health.Network) { Write-Host "Network [PRIVATE] " -ForegroundColor Green -NoNewline } else { Write-Host "Network [PUBLIC - FIX NEEDED] " -ForegroundColor Red -NoNewline }
+            Write-Host "| " -NoNewline -ForegroundColor DarkGray
+            if ($health.SMBSigning) { Write-Host "SMB Signing [OK] " -ForegroundColor Green -NoNewline } else { Write-Host "SMB Signing [STRICT - MAY BLOCK] " -ForegroundColor Yellow -NoNewline }
+            Write-Host "| " -NoNewline -ForegroundColor DarkGray
+            if ($health.PasswordSharing) { Write-Host "Pass Sharing [OFF]" -ForegroundColor Green } else { Write-Host "Pass Sharing [ON - LOGIN REQ]" -ForegroundColor Yellow }
+        }
+        default {
+            Write-Host "   WINDOWS PRINTER SHARING FIX  |  Solusi Berbagi Printer Windows" -ForegroundColor Green
+            Write-Host "   Versi: $script:version  |  Sistem: $winName" -ForegroundColor Cyan
+            Write-Host "   Komputer: $env:COMPUTERNAME  |  Pengguna: $env:USERNAME" -ForegroundColor Gray
+            if ($SubTitle) {
+                Write-Host "   Kategori: $SubTitle" -ForegroundColor Yellow
+            }
+            Write-Host "   STATUS SISTEM: " -NoNewline -ForegroundColor Gray
+            if ($health.Spooler) { Write-Host "Spooler [AKTIF] " -ForegroundColor Green -NoNewline } else { Write-Host "Spooler [BERHENTI] " -ForegroundColor Red -NoNewline }
+            Write-Host "| " -NoNewline -ForegroundColor DarkGray
+            if ($health.Network) { Write-Host "Jaringan [PRIVATE] " -ForegroundColor Green -NoNewline } else { Write-Host "Jaringan [PUBLIC - PERLU PERBAIKAN] " -ForegroundColor Red -NoNewline }
+            Write-Host "| " -NoNewline -ForegroundColor DarkGray
+            if ($health.SMBSigning) { Write-Host "SMB Signing [SESUAI] " -ForegroundColor Green -NoNewline } else { Write-Host "SMB Signing [WAJIB - BISA BLOKIR] " -ForegroundColor Yellow -NoNewline }
+            Write-Host "| " -NoNewline -ForegroundColor DarkGray
+            if ($health.PasswordSharing) { Write-Host "Sandi Sharing [OFF]" -ForegroundColor Green } else { Write-Host "Sandi Sharing [ON - BUTUH LOGIN]" -ForegroundColor Yellow }
+        }
+    }
+    Write-Host $line -ForegroundColor Cyan
+}
 
+function Show-Submenu1 {
+    do {
+        Show-Header -SubTitle $(switch ($script:lang) { "ZH" { "1. 快速与自动化解决方案(ALLFIX 与现代 Win 11)" } "EN" { "1. Quick & Automated Solutions (ALLFIX & Modern Win 11)" } default { "1. Solusi Cepat & Otomatis (ALLFIX & Windows 11 Terbaru)" } })
+        Write-Host ""
+        switch ($script:lang) {
+            "ZH" {
+                Write-Host "  [1] ALLFIX - 同时运行 50 项自动修复" -ForegroundColor Green
+                Write-Host "      (解决几乎所有网络打印机问题的最可靠一键修复)" -ForegroundColor Gray
+                Write-Host "  [2] 现代 Windows 11 深度修复方案 (24H2 / 25H2 / 26H2 及 ARM64)" -ForegroundColor Yellow
+                Write-Host "      (绕过 RPC 限制、SMB 签名和 Win 11 新安全策略)" -ForegroundColor Gray
+                Write-Host "  [3] 优化主机 / 打印服务器电脑(直接连接打印机的电脑)" -ForegroundColor White
+                Write-Host "      (启用远程 RPC 端点、专用网络、来宾共享和自动监视)" -ForegroundColor Gray
+                Write-Host "  [4] 优化客户端电脑(通过网络连接共享打印机的电脑)" -ForegroundColor White
+                Write-Host "      (RPC 命名管道、Point and Print 绕过、SMB 签名修复、HKCU 权限)" -ForegroundColor Gray
+                Write-Host "  [5] 静默 ALLFIX(自动修复 + 立即重启)" -ForegroundColor Red
+                Write-Host "      (适合技术人员/无人值守部署 - 警告:电脑会立即重启!)" -ForegroundColor Gray
+                Write-Host "  [6] 管理 Windows 更新并阻止破坏打印机的补丁" -ForegroundColor White
+                Write-Host "      (暂停更新 35 天、卸载问题补丁、防止设置被还原)" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "  [L] 切换语言 / Switch Language" -ForegroundColor DarkCyan
+                Write-Host "  [B] 返回主菜单" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "请选择 [1-6], L 或 B: " -NoNewline -ForegroundColor Yellow
+            }
+            "EN" {
+                Write-Host "  [1] ALLFIX - Run 50 Automated Fixes Simultaneously" -ForegroundColor Green
+                Write-Host "      (Most reliable one-click fix for almost all network printer problems)" -ForegroundColor Gray
+                Write-Host "  [2] Extreme Path for Modern Windows 11 (24H2 / 25H2 / 26H2 & ARM64)" -ForegroundColor Yellow
+                Write-Host "      (Bypasses RPC restrictions, SMB Signing, and new Win 11 security policies)" -ForegroundColor Gray
+                Write-Host "  [3] Optimize Host / Print Server PC (Connected directly to printer)" -ForegroundColor White
+                Write-Host "      (Enforce remote RPC endpoint, Private network, guest sharing, and watchdog)" -ForegroundColor Gray
+                Write-Host "  [4] Optimize Client PC (Connecting to shared printer over network)" -ForegroundColor White
+                Write-Host "      (RPC Named Pipes, Point and Print bypass, SMB signing fix, HKCU permissions)" -ForegroundColor Gray
+                Write-Host "  [5] Silent ALLFIX (Automated Fixes + Immediate Reboot)" -ForegroundColor Red
+                Write-Host "      (For technicians/unattended deployment - WARNING: PC reboots immediately!)" -ForegroundColor Gray
+                Write-Host "  [6] Manage Windows Updates & Block Printer-Breaking Patches" -ForegroundColor White
+                Write-Host "      (Pause updates 35 days, uninstall bad patches, prevent setting reverts)" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "  [L] Switch Language / Ganti Bahasa" -ForegroundColor DarkCyan
+                Write-Host "  [B] Back to Main Menu" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Select option [1-6], L, or B: " -NoNewline -ForegroundColor Yellow
+            }
+            default {
+                Write-Host "  [1] ALLFIX - Jalankan 50 Perbaikan Otomatis Sekaligus" -ForegroundColor Green
+                Write-Host "      (Solusi paling ampuh untuk hampir seluruh masalah sharing printer kantor)" -ForegroundColor Gray
+                Write-Host "  [2] Solusi Khusus Windows 11 Versi Terbaru (24H2 / 25H2 / 26H2 & ARM64)" -ForegroundColor Yellow
+                Write-Host "      (Bypass proteksi RPC, SMB Signing, dan kebijakan baru Windows 11)" -ForegroundColor Gray
+                Write-Host "  [3] Optimasi Komputer Host / Server Printer (PC yang terhubung kabel printer)" -ForegroundColor White
+                Write-Host "      (Izinkan RPC remote spooler, mode Private, akses tamu, dan pemantau otomatis)" -ForegroundColor Gray
+                Write-Host "  [4] Optimasi Komputer Klien (PC staf yang ingin menyambung ke printer)" -ForegroundColor White
+                Write-Host "      (RPC Named Pipes, bypass Point & Print, nonaktifkan SMB Signing, izin HKCU)" -ForegroundColor Gray
+                Write-Host "  [5] Silent ALLFIX (Perbaikan Otomatis + Langsung Reboot Otomatis)" -ForegroundColor Red
+                Write-Host "      (Cocok untuk teknisi/unattended - PERINGATAN: PC langsung restart!)" -ForegroundColor Gray
+                Write-Host "  [6] Kelola Pembaruan Windows & Blokir Update Perusak Printer" -ForegroundColor White
+                Write-Host "      (Jeda update 35 hari, hapus update bermasalah, atau cegah update reset setting)" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "  [L] Ganti Bahasa / Switch to English" -ForegroundColor DarkCyan
+                Write-Host "  [B] Kembali ke Menu Utama" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Pilih nomor [1-6], L, atau B: " -NoNewline -ForegroundColor Yellow
+            }
+        }
+        $sub = Read-Host
+        if ($null -eq $sub) { return }
+        if ([string]::IsNullOrWhiteSpace($sub)) { continue }
+        $sub = $sub.Trim()
+        if ($sub -match '^(l|lang|language)$') { Toggle-AppLanguage; continue }
+        if ($sub -match '^(b|0|back|kembali)$') { return }
+        switch ($sub) {
+            '1'  { AllFix-Core; Pause-User }
+            '2'  { Extreme-25H2; Pause-User }
+            '3'  { Fix-HostServerRole; Pause-User }
+            '4'  { Fix-ClientWorkstationRole; Pause-User }
+            '5'  { $script:silentNuke = $true; AllFix-Core }
+            '6'  { Manage-WindowsUpdate; Pause-User }
+            '84' { AllFix-Core; Pause-User }
+            '83' { Extreme-25H2; Pause-User }
+            '85' { $script:silentNuke = $true; AllFix-Core }
+            '69' { Manage-WindowsUpdate; Pause-User }
+            default { Write-Host $(switch ($script:lang) { "ZH" { "  [-] 选择无效。" } "EN" { "  [-] Invalid choice." } default { "  [-] Pilihan tidak valid." } }) -ForegroundColor Red; Start-Sleep -Milliseconds 1200 }
+        }
+    } while ($true)
+}
+
+function Show-Submenu2 {
+    do {
+        Show-Header -SubTitle $(switch ($script:lang) { "ZH" { "2. 修复特定错误代码(0x11b、0x709、0xbc4、0x040 等)" } "EN" { "2. Fix Specific Error Codes (0x11b, 0x709, 0xbc4, 0x040, etc.)" } default { "2. Perbaikan Kode Error Spesifik (0x11b, 0x709, 0xbc4, 0x040, dll.)" } })
+        Write-Host ""
+        switch ($script:lang) {
+            "ZH" {
+                Write-Host "  [1] 错误 0x0000011b - 修复 RPC 身份验证阻止 (RpcAuthnLevelPrivacy)" -ForegroundColor White
+                Write-Host "  [2] 错误 0x00000709 / 0x7c - 网络打印机连接失败 (Point and Print / RPC)" -ForegroundColor White
+                Write-Host "  [3] 错误 0x00000bc4 - 未找到打印机(强制启用 RPC 命名管道)" -ForegroundColor White
+                Write-Host "  [4] 错误 0x80070035 - 找不到网络路径(初始化发现服务)" -ForegroundColor White
+                Write-Host "  [5] 错误 0x000006d1 - 禁用客户端渲染 (CSR)" -ForegroundColor White
+                Write-Host "  [6] 错误 0x80070005 - 无法访问 Spooler 文件夹(重置通用 ACL 权限)" -ForegroundColor White
+                Write-Host "  [7] 错误 0x00000040 - 网络名称不再可用(KeepConn 与端口)" -ForegroundColor White
+                Write-Host "  [8] 错误 0x00000002 - 驱动文件复制策略阻止(CopyFilesPolicy 载入)" -ForegroundColor White
+                Write-Host "  [9] 错误 0x0000007e - RPC 驱动位数不匹配(32 位与 64 位系统)" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] 切换语言 / Switch Language" -ForegroundColor DarkCyan
+                Write-Host "  [B] 返回主菜单" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "请选择错误编号 [1-9], L 或 B: " -NoNewline -ForegroundColor Yellow
+            }
+            "EN" {
+                Write-Host "  [1] Error 0x0000011b - Patch RPC Authentication Block (RpcAuthnLevelPrivacy)" -ForegroundColor White
+                Write-Host "  [2] Error 0x00000709 / 0x7c - Network Printer Connection Failure (Point and Print / RPC)" -ForegroundColor White
+                Write-Host "  [3] Error 0x00000bc4 - No Printers Were Found (Enforce RPC Named Pipes)" -ForegroundColor White
+                Write-Host "  [4] Error 0x80070035 - Network Path Not Found (Initialize Discovery Services)" -ForegroundColor White
+                Write-Host "  [5] Error 0x000006d1 - Disable Client-Side Rendering (CSR)" -ForegroundColor White
+                Write-Host "  [6] Error 0x80070005 - Access Denied to Spooler Folder (Reset Universal ACL Permissions)" -ForegroundColor White
+                Write-Host "  [7] Error 0x00000040 - Network Name Is No Longer Available (KeepConn & Ports)" -ForegroundColor White
+                Write-Host "  [8] Error 0x00000002 - Driver File Copy Policy Block (CopyFilesPolicy Ingestion)" -ForegroundColor White
+                Write-Host "  [9] Error 0x0000007e - RPC Driver Bitness Mismatch (32-bit & 64-bit Systems)" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] Switch Language / Ganti Bahasa" -ForegroundColor DarkCyan
+                Write-Host "  [B] Back to Main Menu" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Select error number [1-9], L, or B: " -NoNewline -ForegroundColor Yellow
+            }
+            default {
+                Write-Host "  [1] Error 0x0000011b - Atasi Pemblokiran Otentikasi RPC (RpcAuthnLevelPrivacy)" -ForegroundColor White
+                Write-Host "  [2] Error 0x00000709 / 0x7c - Gagal Sambung Printer Sharing (Point and Print / RPC)" -ForegroundColor White
+                Write-Host "  [3] Error 0x00000bc4 - Printer Jaringan Tidak Ditemukan (No Printers Found)" -ForegroundColor White
+                Write-Host "  [4] Error 0x80070035 - Jalur Jaringan Tidak Ditemukan (Nyalakan Servis Jaringan)" -ForegroundColor White
+                Write-Host "  [5] Error 0x000006d1 - Matikan Client-Side Rendering (CSR)" -ForegroundColor White
+                Write-Host "  [6] Error 0x80070005 - Akses Ditolak ke Folder Spooler (Reset Izin ACL Universal)" -ForegroundColor White
+                Write-Host "  [7] Error 0x00000040 - Nama Jaringan Tidak Tersedia Lagi (KeepConn & NetBIOS)" -ForegroundColor White
+                Write-Host "  [8] Error 0x00000002 - Gagal Menyalin Berkas Driver dari Host (CopyFilesPolicy)" -ForegroundColor White
+                Write-Host "  [9] Error 0x0000007e - Ketidakcocokan Arsitektur Driver 32-bit & 64-bit" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] Ganti Bahasa / Switch to English" -ForegroundColor DarkCyan
+                Write-Host "  [B] Kembali ke Menu Utama" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Pilih nomor error [1-9], L, atau B: " -NoNewline -ForegroundColor Yellow
+            }
+        }
+        $sub = Read-Host
+        if ($null -eq $sub) { return }
+        if ([string]::IsNullOrWhiteSpace($sub)) { continue }
+        $sub = $sub.Trim()
+        if ($sub -match '^(l|lang|language)$') { Toggle-AppLanguage; continue }
+        if ($sub -match '^(b|0|back|kembali)$') { return }
+        switch ($sub) {
+            '1' { Fix-RpcAuthn0x0000011b; Pause-User }
+            '2' { Fix-Deep0x00000709; Pause-User }
+            '3' { Fix-Discovery0x00000bc4; Pause-User }
+            '4' { Fix-NetworkServices; Pause-User }
+            '5' { Fix-CSR; Pause-User }
+            '6' { Reset-SpoolerPerm; Pause-User }
+            '7' { Fix-Network0x00000040; Pause-User }
+            '8' { Fix-DriverCopy0x00000002; Pause-User }
+            '9' { Fix-RpcBitness0x0000007e; Pause-User }
+            default { Write-Host $(switch ($script:lang) { "ZH" { "  [-] 选择无效。" } "EN" { "  [-] Invalid choice." } default { "  [-] Pilihan tidak valid." } }) -ForegroundColor Red; Start-Sleep -Milliseconds 1200 }
+        }
+    } while ($true)
+}
+
+function Show-Submenu3 {
+    do {
+        Show-Header -SubTitle $(switch ($script:lang) { "ZH" { "3. 网络、文件和打印机共享(SMB)与防火墙" } "EN" { "3. Network, File & Printer Sharing (SMB) & Firewall" } default { "3. Jaringan, Berbagi (SMB) & Firewall" } })
+        Write-Host ""
+        switch ($script:lang) {
+            "ZH" {
+                Write-Host "  [1] 将网络配置文件切换为“专用”(打印机共享必需)" -ForegroundColor White
+                Write-Host "  [2] 开启无密码共享(来宾访问与匿名共享)" -ForegroundColor Green
+                Write-Host "      (合并来宾权限并取消密码保护的共享)" -ForegroundColor Gray
+                Write-Host "  [3] 禁用 SMB 签名要求(修复 Win 11 连接打印机/NAS 失败)" -ForegroundColor White
+                Write-Host "  [4] 管理 SMB 协议(确保现代 SMB2/SMB3 及 SMB 1.0 设置)" -ForegroundColor White
+                Write-Host "  [5] 开放文件和打印机共享的防火墙规则(包括 WSD 端口 3702)" -ForegroundColor White
+                Write-Host "  [6] 启用自动设备发现(mDNS、LLMNR 和 WSD 发现)" -ForegroundColor White
+                Write-Host "  [7] 设置网络提供程序顺序并解决 Hyper-V/WSL 虚拟冲突" -ForegroundColor White
+                Write-Host "  [8] 完全重置网络与套接字(Winsock、刷新 DNS、NetBIOS 与端口清理)" -ForegroundColor White
+                Write-Host "  [9] 禁用 IPv6 协议栈(办公局域网为纯 IPv4 时使用)" -ForegroundColor White
+                Write-Host "  [10] 安装 IPP / Mopria 共享基础组件与传统 LPR/LPD 协议" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] 切换语言 / Switch Language" -ForegroundColor DarkCyan
+                Write-Host "  [B] 返回主菜单" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "请选择 [1-10], L 或 B: " -NoNewline -ForegroundColor Yellow
+            }
+            "EN" {
+                Write-Host "  [1] Switch Network Profile to Private (Required for printer sharing)" -ForegroundColor White
+                Write-Host "  [2] Open Passwordless Sharing (Guest Access & Anonymous Sharing)" -ForegroundColor Green
+                Write-Host "      (Combines guest permissions and eliminates password-protected sharing)" -ForegroundColor Gray
+                Write-Host "  [3] Disable SMB Signing Requirement (Fix Win 11 connection to Printer/NAS)" -ForegroundColor White
+                Write-Host "  [4] Manage SMB Protocols (Ensure Modern SMB2/SMB3 & SMB 1.0 Settings)" -ForegroundColor White
+                Write-Host "  [5] Open Windows Firewall Rules for File & Printer Sharing (Including WSD Port 3702)" -ForegroundColor White
+                Write-Host "  [6] Enable Automatic Device Discovery (mDNS, LLMNR, and WSD Discovery)" -ForegroundColor White
+                Write-Host "  [7] Set Network Provider Order & Resolve Virtual Hyper-V/WSL Conflicts" -ForegroundColor White
+                Write-Host "  [8] Total Network & Socket Reset (Winsock, Flush DNS, NetBIOS & Port Purge)" -ForegroundColor White
+                Write-Host "  [9] Disable IPv6 Protocol Stack (Use if office LAN is pure IPv4)" -ForegroundColor White
+                Write-Host "  [10] Install IPP / Mopria Sharing Foundation & Legacy LPR/LPD Protocols" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] Switch Language / Ganti Bahasa" -ForegroundColor DarkCyan
+                Write-Host "  [B] Back to Main Menu" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Select option [1-10], L, or B: " -NoNewline -ForegroundColor Yellow
+            }
+            default {
+                Write-Host "  [1] Ubah Profil Jaringan ke Private (Wajib agar Sharing Printer Aktif)" -ForegroundColor White
+                Write-Host "  [2] Buka Akses Berbagi Tanpa Password (Guest Access & Anonymous Sharing)" -ForegroundColor Green
+                Write-Host "      (Menggabungkan izin akun tamu dan mematikan proteksi password sharing)" -ForegroundColor Gray
+                Write-Host "  [3] Matikan Wajib SMB Signing (Fix Windows 11 Gagal Konek ke Printer/NAS)" -ForegroundColor White
+                Write-Host "  [4] Kelola Protokol SMB (Aktifkan SMB2/SMB3 Modern & Pengaturan SMB 1.0)" -ForegroundColor White
+                Write-Host "  [5] Buka Port Firewall untuk Berbagi Berkas & Printer (Termasuk Port WSD 3702)" -ForegroundColor White
+                Write-Host "  [6] Aktifkan Penemuan Perangkat Otomatis (mDNS, LLMNR, dan WSD Discovery)" -ForegroundColor White
+                Write-Host "  [7] Atur Prioritas Protokol Jaringan & Atasi Konflik Virtual Hyper-V/WSL" -ForegroundColor White
+                Write-Host "  [8] Reset Total Jaringan & Sockets (Winsock, Flush DNS, NetBIOS & Port Purge)" -ForegroundColor White
+                Write-Host "  [9] Matikan Protokol IPv6 (Gunakan jika LAN Kantor Murni IPv4)" -ForegroundColor White
+                Write-Host "  [10] Pasang Fondasi Berbagi IPP / Mopria & Protokol Legacy LPR/LPD" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] Ganti Bahasa / Switch to English" -ForegroundColor DarkCyan
+                Write-Host "  [B] Kembali ke Menu Utama" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Pilih nomor [1-10], L, atau B: " -NoNewline -ForegroundColor Yellow
+            }
+        }
+        $sub = Read-Host
+        if ($null -eq $sub) { return }
+        if ([string]::IsNullOrWhiteSpace($sub)) { continue }
+        $sub = $sub.Trim()
+        if ($sub -match '^(l|lang|language)$') { Toggle-AppLanguage; continue }
+        if ($sub -match '^(b|0|back|kembali)$') { return }
+        switch ($sub) {
+            '1' { Set-NetworkPrivate; Pause-User }
+            '2' {
+                Write-Host $(switch ($script:lang) { "ZH" { "`n  [*] 正在应用无密码共享与来宾访问权限..." } "EN" { "`n  [*] Applying passwordless sharing & guest access permissions..." } default { "`n  [*] Menerapkan akses berbagi tanpa sandi & izin Guest..." } }) -ForegroundColor Cyan
+                Disable-PasswordSharing
+                Enable-SMBGuest
+                Pause-User
+            }
+            '3' { Fix-SMBSigning; Pause-User }
+            '4' {
+                Fix-ModernSMB
+                Manage-SMB1
+                Pause-User
+            }
+            '5' {
+                Open-Firewall
+                Fix-WSDFirewall
+                Pause-User
+            }
+            '6' {
+                Fix-mDNS
+                Enable-WSDDiscovery
+                Pause-User
+            }
+            '7' {
+                Fix-ProviderOrder
+                Fix-HyperVConflict
+                Pause-User
+            }
+            '8' {
+                Reset-Network
+                Reset-NetworkSockets
+                Pause-User
+            }
+            '9' { Disable-IPv6; Pause-User }
+            '10' {
+                Fix-IPPSharing
+                Manage-LPR
+                Pause-User
+            }
+            default { Write-Host $(switch ($script:lang) { "ZH" { "  [-] 选择无效。" } "EN" { "  [-] Invalid choice." } default { "  [-] Pilihan tidak valid." } }) -ForegroundColor Red; Start-Sleep -Milliseconds 1200 }
+        }
+    } while ($true)
+}
+
+function Show-Submenu4 {
+    do {
+        Show-Header -SubTitle $(switch ($script:lang) { "ZH" { "4. 后台打印程序服务与打印队列维护" } "EN" { "4. Print Spooler Service & Print Queue Maintenance" } default { "4. Layanan Print Spooler & Antrean Cetak" } })
+        Write-Host ""
+        switch ($script:lang) {
+            "ZH" {
+                Write-Host "  [1] 干净重置后台打印程序并清理卡住的打印队列文件 (.spl/.shd)" -ForegroundColor Green
+                Write-Host "      (停止后台打印程序、移除锁定文档并干净重启服务)" -ForegroundColor Gray
+                Write-Host "  [2] 配置后台打印程序崩溃时自动恢复(自动重启)" -ForegroundColor White
+                Write-Host "  [3] 部署后台打印程序守护计划任务(每 5 分钟监视一次)" -ForegroundColor White
+                Write-Host "  [4] 修复并重置后台打印程序的注册表依赖项(RPCSS 与 HTTP)" -ForegroundColor White
+                Write-Host "  [5] 重启核心系统 RPC 与 DCOM 服务" -ForegroundColor White
+                Write-Host "  [6] 重启目标电脑上的远程后台打印程序服务" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] 切换语言 / Switch Language" -ForegroundColor DarkCyan
+                Write-Host "  [B] 返回主菜单" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "请选择 [1-6], L 或 B: " -NoNewline -ForegroundColor Yellow
+            }
+            "EN" {
+                Write-Host "  [1] Clean Spooler Reset & Purge Jammed Print Queue Files (.spl/.shd)" -ForegroundColor Green
+                Write-Host "      (Stops spooler, removes locked documents, and cleanly restarts service)" -ForegroundColor Gray
+                Write-Host "  [2] Configure Automatic Spooler Recovery on Crash (Auto-Restart)" -ForegroundColor White
+                Write-Host "  [3] Deploy Spooler Watchdog Scheduled Task (Monitors every 5 minutes)" -ForegroundColor White
+                Write-Host "  [4] Repair & Reset Spooler Registry Dependencies (RPCSS & HTTP)" -ForegroundColor White
+                Write-Host "  [5] Restart Core System RPC & DCOM Services" -ForegroundColor White
+                Write-Host "  [6] Restart Remote Spooler Service on Target Computer" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] Switch Language / Ganti Bahasa" -ForegroundColor DarkCyan
+                Write-Host "  [B] Back to Main Menu" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Select option [1-6], L, or B: " -NoNewline -ForegroundColor Yellow
+            }
+            default {
+                Write-Host "  [1] Reset Bersih Spooler & Hapus Berkas Antrean Cetak yang Nyangkut" -ForegroundColor Green
+                Write-Host "      (Hentikan spooler, bersihkan antrean .spl/.shd, dan restart layanan)" -ForegroundColor Gray
+                Write-Host "  [2] Konfigurasi Pemulihan Otomatis Spooler Saat Crash (Auto-Restart)" -ForegroundColor White
+                Write-Host "  [3] Pasang Pemantau Spooler Otomatis (Watchdog Cek Tiap 5 Menit)" -ForegroundColor White
+                Write-Host "  [4] Perbaiki & Reset Dependensi Registri Spooler (RPCSS & HTTP)" -ForegroundColor White
+                Write-Host "  [5] Restart Layanan Sistem RPC & DCOM" -ForegroundColor White
+                Write-Host "  [6] Restart Layanan Spooler di Komputer Jarak Jauh (Remote Spooler)" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] Ganti Bahasa / Switch to English" -ForegroundColor DarkCyan
+                Write-Host "  [B] Kembali ke Menu Utama" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Pilih nomor [1-6], L, atau B: " -NoNewline -ForegroundColor Yellow
+            }
+        }
+        $sub = Read-Host
+        if ($null -eq $sub) { return }
+        if ([string]::IsNullOrWhiteSpace($sub)) { continue }
+        $sub = $sub.Trim()
+        if ($sub -match '^(l|lang|language)$') { Toggle-AppLanguage; continue }
+        if ($sub -match '^(b|0|back|kembali)$') { return }
+        switch ($sub) {
+            '1' {
+                Nuke-PrintQueue
+                Reset-Spooler
+                Pause-User
+            }
+            '2' { Set-SpoolerRecovery; Pause-User }
+            '3' { Set-SpoolerWatchdog; Pause-User }
+            '4' {
+                Reset-SpoolerDependency
+                Reset-SpoolerDependencyRegistry
+                Pause-User
+            }
+            '5' { Check-RPC; Pause-User }
+            '6' { Remote-SpoolerReset; Pause-User }
+            default { Write-Host $(switch ($script:lang) { "ZH" { "  [-] 选择无效。" } "EN" { "  [-] Invalid choice." } default { "  [-] Pilihan tidak valid." } }) -ForegroundColor Red; Start-Sleep -Milliseconds 1200 }
+        }
+    } while ($true)
+}
+
+function Show-Submenu5 {
+    do {
+        Show-Header -SubTitle $(switch ($script:lang) { "ZH" { "5. 驱动管理与幽灵 / USB 打印机清理" } "EN" { "5. Driver Management & Ghost / USB Printer Cleanup" } default { "5. Pengelolaan Driver & Pembersihan Printer Hantu/USB" } })
+        Write-Host ""
+        switch ($script:lang) {
+            "ZH" {
+                Write-Host "  [1] 强制结束锁定驱动的进程(“驱动程序正在使用中”)" -ForegroundColor White
+                Write-Host "  [2] 禁用打印驱动程序隔离(防止单独进程崩溃)" -ForegroundColor White
+                Write-Host "  [3] 清理过时与损坏的驱动程序(通过 pnputil 清理驱动)" -ForegroundColor White
+                Write-Host "  [4] 移除幽灵与重复的 USB 打印机(Copy 1、Copy 2、失效端口)" -ForegroundColor White
+                Write-Host "  [5] 修复通用 V4 打印类驱动并切换 PCL / PostScript 模式" -ForegroundColor White
+                Write-Host "  [6] 修复浏览器打印问题(Chrome/Edge 沙箱与现代 UWP 应用)" -ForegroundColor White
+                Write-Host "  [7] 重装 Windows 内置虚拟打印机(Microsoft Print to PDF / XPS)" -ForegroundColor White
+                Write-Host "  [8] 永久锁定默认打印机(防止自动切换位置)" -ForegroundColor White
+                Write-Host "  [9] 清理打印机共享名称(去除空格与非法字符)" -ForegroundColor White
+                Write-Host "  [10] 打开打印服务器属性管理控制台" -ForegroundColor White
+                Write-Host "  [11] 强制卸载指定的问题打印机" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] 切换语言 / Switch Language" -ForegroundColor DarkCyan
+                Write-Host "  [B] 返回主菜单" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "请选择 [1-11], L 或 B: " -NoNewline -ForegroundColor Yellow
+            }
+            "EN" {
+                Write-Host "  [1] Force-Kill Locking Driver Processes ('Driver is in use')" -ForegroundColor White
+                Write-Host "  [2] Disable Print Driver Isolation (Prevent separate process crashes)" -ForegroundColor White
+                Write-Host "  [3] Clean Stale & Corrupted Drivers (Driver Sweeper via pnputil)" -ForegroundColor White
+                Write-Host "  [4] Remove Ghost & Duplicate USB Printers (Copy 1, Copy 2, dead ports)" -ForegroundColor White
+                Write-Host "  [5] Repair Universal V4 Print Class Drivers & Switch PCL / PostScript Mode" -ForegroundColor White
+                Write-Host "  [6] Fix Web Browser Printing (Chrome/Edge Sandbox & Modern UWP Apps)" -ForegroundColor White
+                Write-Host "  [7] Reinstall Windows Virtual Built-in Printers (Microsoft Print to PDF / XPS)" -ForegroundColor White
+                Write-Host "  [8] Lock Default Printer Permanently (Prevent automatic location switching)" -ForegroundColor White
+                Write-Host "  [9] Sanitize Printer Share Names (Strip spaces and illegal characters)" -ForegroundColor White
+                Write-Host "  [10] Open Print Server Properties Management Console" -ForegroundColor White
+                Write-Host "  [11] Force-Uninstall Specific Problematic Printer" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] Switch Language / Ganti Bahasa" -ForegroundColor DarkCyan
+                Write-Host "  [B] Back to Main Menu" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Select option [1-11], L, or B: " -NoNewline -ForegroundColor Yellow
+            }
+            default {
+                Write-Host "  [1] Hentikan Paksa Proses Driver yang Mengunci ('Driver is in use')" -ForegroundColor White
+                Write-Host "  [2] Matikan Isolasi Driver Printer (Cegah Driver Crash Terpisah)" -ForegroundColor White
+                Write-Host "  [3] Bersihkan Driver Usang / Rusak dari Sistem (Driver Sweeper via pnputil)" -ForegroundColor White
+                Write-Host "  [4] Hapus Printer Hantu & Duplikat Port USB (Ghost Copy 1, Copy 2)" -ForegroundColor White
+                Write-Host "  [5] Perbaiki Driver Kelas Universal V4 & Ganti Mode PCL / PostScript" -ForegroundColor White
+                Write-Host "  [6] Perbaiki Masalah Cetak Browser (Chrome/Edge Sandbox & Aplikasi UWP)" -ForegroundColor White
+                Write-Host "  [7] Pasang Ulang Printer Bawaan Windows (Microsoft Print to PDF / XPS)" -ForegroundColor White
+                Write-Host "  [8] Kunci Printer Default Permanen (Cegah Berubah Otomatis)" -ForegroundColor White
+                Write-Host "  [9] Bersihkan Nama Share Printer dari Spasi & Karakter Terlarang" -ForegroundColor White
+                Write-Host "  [10] Buka Properti Server Cetak Windows (Print Server Properties)" -ForegroundColor White
+                Write-Host "  [11] Hapus Instalasi Printer Tertentu Secara Manual" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] Ganti Bahasa / Switch to English" -ForegroundColor DarkCyan
+                Write-Host "  [B] Kembali ke Menu Utama" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Pilih nomor [1-11], L, atau B: " -NoNewline -ForegroundColor Yellow
+            }
+        }
+        $sub = Read-Host
+        if ($null -eq $sub) { return }
+        if ([string]::IsNullOrWhiteSpace($sub)) { continue }
+        $sub = $sub.Trim()
+        if ($sub -match '^(l|lang|language)$') { Toggle-AppLanguage; continue }
+        if ($sub -match '^(b|0|back|kembali)$') { return }
+        switch ($sub) {
+            '1' { Force-KillDriverProcess; Pause-User }
+            '2' {
+                Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Print" -Name IsolationPolicy -Value 0 -Type DWord -Force
+                Write-Host $(switch ($script:lang) { "ZH" { "  [+] 驱动隔离已禁用。" } "EN" { "  [+] Driver Isolation Disabled." } default { "  [+] Isolasi Driver Dinonaktifkan." } }) -ForegroundColor Green
+                Pause-User
+            }
+            '3' { Sweep-OrphanedDrivers; Pause-User }
+            '4' { Remove-GhostUSBPrinters; Pause-User }
+            '5' {
+                Fix-V4ClassDriver
+                Switch-DriverMode
+                Pause-User
+            }
+            '6' {
+                Fix-UWPPrinting
+                Fix-BrowserPrintSandbox
+                Pause-User
+            }
+            '7' { Fix-PrintToPDF; Pause-User }
+            '8' {
+                Manage-DefaultPrinter
+                Force-DefaultPrinterRegistry
+                Pause-User
+            }
+            '9' { Sanitize-PrinterShareName; Pause-User }
+            '10' { Manage-Drivers; Pause-User }
+            '11' { Uninstall-Printer; Pause-User }
+            default { Write-Host $(switch ($script:lang) { "ZH" { "  [-] 选择无效。" } "EN" { "  [-] Invalid choice." } default { "  [-] Pilihan tidak valid." } }) -ForegroundColor Red; Start-Sleep -Milliseconds 1200 }
+        }
+    } while ($true)
+}
+
+function Show-Submenu6 {
+    do {
+        Show-Header -SubTitle $(switch ($script:lang) { "ZH" { "6. 凭据、访问权限与安全(Vault、LSA、UAC)" } "EN" { "6. Credentials, Access Rights & Security (Vault, LSA, UAC)" } default { "6. Kredensial, Hak Akses & Keamanan (Vault, LSA, UAC)" } })
+        Write-Host ""
+        switch ($script:lang) {
+            "ZH" {
+                Write-Host "  [1] 将打印机凭据(用户名与密码)保存到 Windows 凭据管理器" -ForegroundColor White
+                Write-Host "  [2] 清理 Windows 凭据管理器中过期/失效的打印机凭据" -ForegroundColor White
+                Write-Host "  [3] 将登录凭据部署到此电脑的所有用户配置文件" -ForegroundColor White
+                Write-Host "  [4] 为工作组绕过管理员 UAC 网络令牌筛选" -ForegroundColor White
+                Write-Host "  [5] 对齐 NTLMv2 身份验证响应(LmCompatibilityLevel)" -ForegroundColor White
+                Write-Host "  [6] 放宽严格安全保护(LSA 保护、智能应用控制、凭据保护)" -ForegroundColor White
+                Write-Host "  [7] 管理 Windows 受保护打印 / WPP(Win 11 驱动模式)" -ForegroundColor White
+                Write-Host "  [8] 绕过 Point and Print 驱动限制(提升覆盖)" -ForegroundColor White
+                Write-Host "  [9] 修复远程桌面连接 (RDP) 上的打印机重定向" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] 切换语言 / Switch Language" -ForegroundColor DarkCyan
+                Write-Host "  [B] 返回主菜单" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "请选择 [1-9], L 或 B: " -NoNewline -ForegroundColor Yellow
+            }
+            "EN" {
+                Write-Host "  [1] Save Printer Credentials (Username & Password) to Windows Vault" -ForegroundColor White
+                Write-Host "  [2] Clean Stale/Outdated Printer Credentials from Windows Vault" -ForegroundColor White
+                Write-Host "  [3] Deploy Login Credentials to All User Profiles on This Machine" -ForegroundColor White
+                Write-Host "  [4] Bypass Administrator UAC Network Token Filter for Workgroups" -ForegroundColor White
+                Write-Host "  [5] Align NTLMv2 Authentication Response (LmCompatibilityLevel)" -ForegroundColor White
+                Write-Host "  [6] Relax Strict Security Protections (LSA Protection, Smart App Control, Credential Guard)" -ForegroundColor White
+                Write-Host "  [7] Manage Windows Protected Print / WPP (Win 11 Driver Mode)" -ForegroundColor White
+                Write-Host "  [8] Bypass Point and Print Driver Restrictions (Elevation Override)" -ForegroundColor White
+                Write-Host "  [9] Fix Printer Redirection on Remote Desktop Connections (RDP)" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] Switch Language / Ganti Bahasa" -ForegroundColor DarkCyan
+                Write-Host "  [B] Back to Main Menu" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Select option [1-9], L, or B: " -NoNewline -ForegroundColor Yellow
+            }
+            default {
+                Write-Host "  [1] Simpan Kredensial (User & Password) Printer ke Windows Vault Permanen" -ForegroundColor White
+                Write-Host "  [2] Bersihkan Kredensial Printer yang Usang atau Gagal dari Windows Vault" -ForegroundColor White
+                Write-Host "  [3] Terapkan Kredensial Login ke Semua Profil Pengguna di Komputer Ini" -ForegroundColor White
+                Write-Host "  [4] Bypass Filter Token UAC Administrator untuk Jaringan Workgroup" -ForegroundColor White
+                Write-Host "  [5] Selaraskan Respon Otentikasi NTLMv2 (LmCompatibilityLevel)" -ForegroundColor White
+                Write-Host "  [6] Longgarkan Proteksi Keamanan Ketat (LSA Protection, Smart App Control, Credential Guard)" -ForegroundColor White
+                Write-Host "  [7] Kelola Windows Protected Print / WPP (Mode Proteksi Driver Win 11)" -ForegroundColor White
+                Write-Host "  [8] Bypass Pembatasan Driver Point and Print (Elevation Override)" -ForegroundColor White
+                Write-Host "  [9] Perbaiki Masalah Berbagi Printer pada Sambungan Remote Desktop (RDP)" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] Ganti Bahasa / Switch to English" -ForegroundColor DarkCyan
+                Write-Host "  [B] Kembali ke Menu Utama" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Pilih nomor [1-9], L, atau B: " -NoNewline -ForegroundColor Yellow
+            }
+        }
+        $sub = Read-Host
+        if ($null -eq $sub) { return }
+        if ([string]::IsNullOrWhiteSpace($sub)) { continue }
+        $sub = $sub.Trim()
+        if ($sub -match '^(l|lang|language)$') { Toggle-AppLanguage; continue }
+        if ($sub -match '^(b|0|back|kembali)$') { return }
+        switch ($sub) {
+            '1' { Add-Credential; Pause-User }
+            '2' { Clean-Credential; Pause-User }
+            '3' { Inject-CrossUserCredentials; Pause-User }
+            '4' { Fix-UACTokenFilter; Pause-User }
+            '5' { Fix-NTLMv2; Pause-User }
+            '6' {
+                Fix-LSAProtection
+                Fix-SAC
+                Fix-CredentialGuard
+                Pause-User
+            }
+            '7' { Manage-WPP; Pause-User }
+            '8' { Fix-AdvancedPointAndPrint; Pause-User }
+            '9' { Fix-RDPPrinter; Pause-User }
+            default { Write-Host $(switch ($script:lang) { "ZH" { "  [-] 选择无效。" } "EN" { "  [-] Invalid choice." } default { "  [-] Pilihan tidak valid." } }) -ForegroundColor Red; Start-Sleep -Milliseconds 1200 }
+        }
+    } while ($true)
+}
+
+function Show-Submenu7 {
+    do {
+        Show-Header -SubTitle $(switch ($script:lang) { "ZH" { "7. 端口映射与手动连接(UNC 端口映射与 TCP/IP)" } "EN" { "7. Port Mapping & Manual Connections (UNC Port Map & TCP/IP)" } default { "7. Pemetaan Port & Sambungan Manual (UNC Port Map & TCP/IP)" } })
+        Write-Host ""
+        switch ($script:lang) {
+            "ZH" {
+                Write-Host "  [1] 将本地端口映射到 UNC 共享(错误 0x00000709 的终极绕过方案)" -ForegroundColor Green
+                Write-Host "      (示例:将本地端口直接连接到 \\服务器\打印机 )" -ForegroundColor Gray
+                Write-Host "  [2] 移除之前创建的本地 UNC 端口映射" -ForegroundColor White
+                Write-Host "  [3] 将 WSD 打印机端口转换为稳定的标准 TCP/IP 套接字" -ForegroundColor White
+                Write-Host "  [4] 手动添加标准 TCP/IP 打印机端口" -ForegroundColor White
+                Write-Host "  [5] 扫描并发现远程网络主机上的共享打印机" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] 切换语言 / Switch Language" -ForegroundColor DarkCyan
+                Write-Host "  [B] 返回主菜单" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "请选择 [1-5], L 或 B: " -NoNewline -ForegroundColor Yellow
+            }
+            "EN" {
+                Write-Host "  [1] Map Local Port to UNC Share (Ultimate Bypass for Error 0x00000709)" -ForegroundColor Green
+                Write-Host "      (Example: connects local port directly to \\SERVER\PRINTER)" -ForegroundColor Gray
+                Write-Host "  [2] Remove Previously Created Local UNC Port Mapping" -ForegroundColor White
+                Write-Host "  [3] Convert WSD Printer Port to Stable Standard TCP/IP Socket" -ForegroundColor White
+                Write-Host "  [4] Add Standard TCP/IP Printer Port Manually" -ForegroundColor White
+                Write-Host "  [5] Scan & Discover Shared Printers on Remote Network Host" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] Switch Language / Ganti Bahasa" -ForegroundColor DarkCyan
+                Write-Host "  [B] Back to Main Menu" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Select option [1-5], L, or B: " -NoNewline -ForegroundColor Yellow
+            }
+            default {
+                Write-Host "  [1] Petakan Port Lokal ke Jalur Share UNC (Solusi Ampuh Bypass 0x00000709)" -ForegroundColor Green
+                Write-Host "      (Contoh: menghubungkan port lokal langsung ke \\NAMA-SERVER\PRINTER)" -ForegroundColor Gray
+                Write-Host "  [2] Hapus Pemetaan Port Lokal UNC yang Pernah Dibuat" -ForegroundColor White
+                Write-Host "  [3] Ubah Port Printer dari WSD Menjadi Standar TCP/IP Stabil" -ForegroundColor White
+                Write-Host "  [4] Tambah Port Printer Standar TCP/IP Secara Manual" -ForegroundColor White
+                Write-Host "  [5] Pindai & Temukan Printer yang Aktif di Jaringan Komputer Target" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] Ganti Bahasa / Switch to English" -ForegroundColor DarkCyan
+                Write-Host "  [B] Kembali ke Menu Utama" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Pilih nomor [1-5], L, atau B: " -NoNewline -ForegroundColor Yellow
+            }
+        }
+        $sub = Read-Host
+        if ($null -eq $sub) { return }
+        if ([string]::IsNullOrWhiteSpace($sub)) { continue }
+        $sub = $sub.Trim()
+        if ($sub -match '^(l|lang|language)$') { Toggle-AppLanguage; continue }
+        if ($sub -match '^(b|0|back|kembali)$') { return }
+        switch ($sub) {
+            '1' { Map-LocalPortUNC; Pause-User }
+            '2' { Remove-LocalPortUNC; Pause-User }
+            '3' { Convert-WSDtoTCPIP; Pause-User }
+            '4' { Manage-TCPPort; Pause-User }
+            '5' { Scan-RemotePrinter; Pause-User }
+            default { Write-Host $(switch ($script:lang) { "ZH" { "  [-] 选择无效。" } "EN" { "  [-] Invalid choice." } default { "  [-] Pilihan tidak valid." } }) -ForegroundColor Red; Start-Sleep -Milliseconds 1200 }
+        }
+    } while ($true)
+}
+
+function Show-Submenu8 {
+    do {
+        Show-Header -SubTitle $(switch ($script:lang) { "ZH" { "8. 备份、系统诊断与恢复" } "EN" { "8. Backup, System Diagnostics & Recovery" } default { "8. Cadangan, Diagnostik & Pemulihan" } })
+        Write-Host ""
+        switch ($script:lang) {
+            "ZH" {
+                Write-Host "  [1] 备份打印机与网络注册表(修复前始终建议执行)" -ForegroundColor Green
+                Write-Host "  [2] 从之前的备份快照回滚注册表" -ForegroundColor White
+                Write-Host "  [3] 创建系统还原点以便系统回滚" -ForegroundColor White
+                Write-Host "  [4] 扫描并修复系统文件(SFC /scannow 与 DISM)" -ForegroundColor White
+                Write-Host "  [5] 测试网络连接并扫描端口(Ping 与端口 135/445)" -ForegroundColor White
+                Write-Host "  [6] 审计与分析打印服务事件日志(事件日志解析器)" -ForegroundColor White
+                Write-Host "  [7] 生成交互式 HTML 诊断报告" -ForegroundColor White
+                Write-Host "  [8] 扫描 Active Directory 域策略 / GPO 干预" -ForegroundColor White
+                Write-Host "  [9] 备份并将打印机迁移到另一台电脑(PrintBRM)" -ForegroundColor White
+                Write-Host "  [10] 强制打印机状态为“在线”(如果卡在离线状态)" -ForegroundColor White
+                Write-Host "  [11] 打开 Windows 服务控制台 (services.msc)" -ForegroundColor White
+                Write-Host "  [12] 打开修复执行日志文件(日志管理器)" -ForegroundColor White
+                Write-Host "  [13] 快速系统诊断审计" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] 切换语言 / Switch Language" -ForegroundColor DarkCyan
+                Write-Host "  [B] 返回主菜单" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "请选择 [1-13], L 或 B: " -NoNewline -ForegroundColor Yellow
+            }
+            "EN" {
+                Write-Host "  [1] Backup Printer & Network Registry (Always Recommended Before Fixes)" -ForegroundColor Green
+                Write-Host "  [2] Rollback Registry from Previous Backup Snapshot" -ForegroundColor White
+                Write-Host "  [3] Create System Restore Point for System Rollback" -ForegroundColor White
+                Write-Host "  [4] Scan & Repair System Files (SFC /scannow & DISM)" -ForegroundColor White
+                Write-Host "  [5] Test Network Connectivity & Scan Ports (Ping & Port 135/445)" -ForegroundColor White
+                Write-Host "  [6] Audit & Analyze Print Service Event Logs (Event Log Parser)" -ForegroundColor White
+                Write-Host "  [7] Generate Interactive HTML Diagnostic Report" -ForegroundColor White
+                Write-Host "  [8] Scan Active Directory Domain Policy / GPO Intervention" -ForegroundColor White
+                Write-Host "  [9] Backup & Migrate Printers to Another Computer (PrintBRM)" -ForegroundColor White
+                Write-Host "  [10] Force Printer Status to 'Online' (If stuck offline)" -ForegroundColor White
+                Write-Host "  [11] Open Windows Services Console (services.msc)" -ForegroundColor White
+                Write-Host "  [12] Open Repair Execution Log File (Log Manager)" -ForegroundColor White
+                Write-Host "  [13] Quick System Diagnostics Audit" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] Switch Language / Ganti Bahasa" -ForegroundColor DarkCyan
+                Write-Host "  [B] Back to Main Menu" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Select option [1-13], L, or B: " -NoNewline -ForegroundColor Yellow
+            }
+            default {
+                Write-Host "  [1] Cadangkan Registri Printer & Jaringan (Backup Registry Sebelum Perbaikan)" -ForegroundColor Green
+                Write-Host "  [2] Pulihkan Registri dari Cadangan Sebelumnya (Rollback Registry)" -ForegroundColor White
+                Write-Host "  [3] Buat Titik Pemulihan Sistem Windows (System Restore Point)" -ForegroundColor White
+                Write-Host "  [4] Pindai & Perbaiki Kerusakan File Sistem Windows (SFC /scannow & DISM)" -ForegroundColor White
+                Write-Host "  [5] Uji Koneksi & Pindai Port Jaringan Printer (Ping & Port 135/445)" -ForegroundColor White
+                Write-Host "  [6] Audit & Analisis Log Error Layanan Print Windows (Event Log Parser)" -ForegroundColor White
+                Write-Host "  [7] Buat Laporan Diagnostik Interaktif (File HTML Lengkap)" -ForegroundColor White
+                Write-Host "  [8] Pindai Intervensi Kebijakan Domain / GPO yang Mengunci Pengaturan" -ForegroundColor White
+                Write-Host "  [9] Cadangkan / Migrasikan Seluruh Printer ke Komputer Lain (PrintBRM)" -ForegroundColor White
+                Write-Host "  [10] Paksa Status Printer Menjadi 'Online' (Jika Nyangkut Status Offline)" -ForegroundColor White
+                Write-Host "  [11] Buka Jendela Layanan Windows (Services.msc)" -ForegroundColor White
+                Write-Host "  [12] Buka Catatan Log Eksekusi Perbaikan (Log Manager)" -ForegroundColor White
+                Write-Host "  [13] Audit Ringkas Kesehatan Sistem (System Diagnostics Audit)" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] Ganti Bahasa / Switch to English" -ForegroundColor DarkCyan
+                Write-Host "  [B] Kembali ke Menu Utama" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Pilih nomor [1-13], L, atau B: " -NoNewline -ForegroundColor Yellow
+            }
+        }
+        $sub = Read-Host
+        if ($null -eq $sub) { return }
+        if ([string]::IsNullOrWhiteSpace($sub)) { continue }
+        $sub = $sub.Trim()
+        if ($sub -match '^(l|lang|language)$') { Toggle-AppLanguage; continue }
+        if ($sub -match '^(b|0|back|kembali)$') { return }
+        switch ($sub) {
+            '1' { Backup-Registry; Pause-User }
+            '2' { Rollback-Registry; Pause-User }
+            '3' { Create-RestorePoint; Pause-User }
+            '4' { Run-SfcDism; Pause-User }
+            '5' { Test-Connectivity; Pause-User }
+            '6' {
+                Scan-PrintEventLog
+                Parse-PrintEventLog
+                Pause-User
+            }
+            '7' { Generate-HtmlLog; Pause-User }
+            '8' { Detect-GPOIntervention; Pause-User }
+            '9' { Print-Migration; Pause-User }
+            '10' { Force-PrinterOnline; Pause-User }
+            '11' { Open-Services; Pause-User }
+            '12' { Log-Manager; Pause-User }
+            '13' { Run-QuickDiagnostics; Pause-User }
+            default { Write-Host $(switch ($script:lang) { "ZH" { "  [-] 选择无效。" } "EN" { "  [-] Invalid choice." } default { "  [-] Pilihan tidak valid." } }) -ForegroundColor Red; Start-Sleep -Milliseconds 1200 }
+        }
+    } while ($true)
+}
+
+function Show-Submenu9 {
+    do {
+        Show-Header -SubTitle $(switch ($script:lang) { "ZH" { "9. 帮助与使用指南" } "EN" { "9. Help & Usage Guide" } default { "9. Panduan & Bantuan Penggunaan" } })
+        Write-Host ""
+        switch ($script:lang) {
+            "ZH" {
+                Write-Host "  [1] 显示快速指南与办公故障排查流程" -ForegroundColor White
+                Write-Host "  [2] 在浏览器中打开离线 HTML 文档" -ForegroundColor White
+                Write-Host "  [3] 检测当前 Windows 版本与架构" -ForegroundColor White
+                Write-Host "  [4] 运行 Windows 内置打印机故障排除程序 (msdt)" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] 切换语言 / Switch Language" -ForegroundColor DarkCyan
+                Write-Host "  [B] 返回主菜单" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "请选择 [1-4], L 或 B: " -NoNewline -ForegroundColor Yellow
+            }
+            "EN" {
+                Write-Host "  [1] Show Quick Guide & Office Troubleshooting Flow" -ForegroundColor White
+                Write-Host "  [2] Open Offline HTML Documentation in Browser" -ForegroundColor White
+                Write-Host "  [3] Detect Current Windows Version & Architecture" -ForegroundColor White
+                Write-Host "  [4] Run Windows Built-in Printer Troubleshooter (msdt)" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] Switch Language / Ganti Bahasa" -ForegroundColor DarkCyan
+                Write-Host "  [B] Back to Main Menu" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Select option [1-4], L, or B: " -NoNewline -ForegroundColor Yellow
+            }
+            default {
+                Write-Host "  [1] Tampilkan Panduan Singkat & Langkah Alur Perbaikan Kantor" -ForegroundColor White
+                Write-Host "  [2] Buka Dokumentasi Lengkap Offline (File HTML)" -ForegroundColor White
+                Write-Host "  [3] Deteksi Versi & Arsitektur Windows Saat Ini" -ForegroundColor White
+                Write-Host "  [4] Jalankan Troubleshooter Bawaan Windows (msdt)" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  [L] Ganti Bahasa / Switch to English" -ForegroundColor DarkCyan
+                Write-Host "  [B] Kembali ke Menu Utama" -ForegroundColor Cyan
+                Write-Host ""
+                Write-Host ("-" * 86) -ForegroundColor Cyan
+                Write-Host "Pilih nomor [1-4], L, atau B: " -NoNewline -ForegroundColor Yellow
+            }
+        }
+        $sub = Read-Host
+        if ($null -eq $sub) { return }
+        if ([string]::IsNullOrWhiteSpace($sub)) { continue }
+        $sub = $sub.Trim()
+        if ($sub -match '^(l|lang|language)$') { Toggle-AppLanguage; continue }
+        if ($sub -match '^(b|0|back|kembali)$') { return }
+        switch ($sub) {
+            '1' { Show-Help -Topic "menu"; Pause-User }
+            '2' { Show-Help -Topic "all"; Pause-User }
+            '3' { Detect-Win; Pause-User }
+            '4' { Start-Troubleshooter; Pause-User }
+            default { Write-Host $(switch ($script:lang) { "ZH" { "  [-] 选择无效。" } "EN" { "  [-] Invalid choice." } default { "  [-] Pilihan tidak valid." } }) -ForegroundColor Red; Start-Sleep -Milliseconds 1200 }
+        }
+    } while ($true)
+}
+
+function Show-MainMenu {
     try {
         $rawUI = $Host.UI.RawUI
         $bufSize = $rawUI.BufferSize
-        if ($bufSize.Width -lt 180) {
-            $bufSize.Width = 180
+        if ($bufSize.Width -lt 88) {
+            $bufSize.Width = 88
             $rawUI.BufferSize = $bufSize
         }
         $winSize = $rawUI.WindowSize
-        if ($winSize.Width -lt 180) {
-            $winSize.Width = 180
+        if ($winSize.Width -lt 88) {
+            $winSize.Width = 88
             $rawUI.WindowSize = $winSize
         }
     } catch {}
 
-    # ---- 计算字符串在控制台中的显示宽度（全角=2，半角=1） ----
-    function Get-DisplayWidth([string]$s) {
-        $w = 0
-        foreach ($c in $s.ToCharArray()) {
-            if ([char]::GetUnicodeCategory($c) -in @('OtherLetter', 'OtherScript')) {
-                $w += 2
-            } else {
-                $w += 1
-            }
-        }
-        return $w
-    }
-
-    # ---- 按显示宽度填充（右侧补空格），超宽时截断加省略号 ----
-    function PadRightDisplay([string]$s, [int]$targetWidth) {
-        $cur = Get-DisplayWidth $s
-        if ($cur -ge $targetWidth) {
-            $truncated = ''
-            $w = 0
-            foreach ($c in $s.ToCharArray()) {
-                $cw = if ([char]::GetUnicodeCategory($c) -in @('OtherLetter', 'OtherScript')) { 2 } else { 1 }
-                if ($w + $cw -gt $targetWidth - 2) { break }
-                $truncated += $c
-                $w += $cw
-            }
-            if ($truncated.Length -lt $s.Length) { $truncated += '…' }
-            return $truncated
-        }
-        return $s + (' ' * ($targetWidth - $cur))
-    }
-
-    $cw1 = 62
-    $cw2 = 55
-    $cw3 = 58
-    $totalW = $cw1 + $cw2 + $cw3
-
-    Write-Host (" 核心修复与网络服务".PadRight($cw1)) -ForegroundColor Cyan -NoNewline
-    Write-Host (" 后台处理程序、驱动与策略".PadRight($cw2)) -ForegroundColor Cyan -NoNewline
-    Write-Host " 诊断与自动化" -ForegroundColor Cyan
-
-    $col1 = @(
-        "[01] 修复错误 0x0000011b (RpcAuthnLevelPrivacy)",
-        "[02] 深度修复 0x00000709（多层 RPC 和 Kerberos）",
-        "[03] 绕过错误 0x00000bc4（未找到打印机）",
-        "[04] 修复错误 0x80070035（自动化网络服务）",
-        "[05] 禁用客户端渲染（错误 0x000006d1）",
-        "[06] 修复错误 0x80070005（重置后台处理程序 ACL）",
-        "[07] 修复错误 0x00000040（网络不可用）",
-        "[08] 修复错误 0x00000002 (CopyFilesPolicy)",
-        "[09] 修复错误 0x0000007e（RPC 位数不匹配）",
-        "[10] 完整网络重置（DNS、Winsock、NetBIOS）",
-        "[11] 强制网络配置文件为专用",
-        "[12] 强制禁用密码保护共享",
-        "[13] 通过命名管道和 TCP 启用 RPC",
-        "[14] 配置防火墙文件和打印机共享",
-        "[15] SMB 1.0 旧版协议管理（开/关）",
-        "[16] 禁用 SMB 签名（修复 Win 11 访问 NAS）",
-        "[17] 强制现代 SMB2/SMB3 拓扑",
-        "[18] 将 SMB 置于网络提供程序顺序首位",
-        "[19] 禁用 IPv6 协议栈",
-        "[20] 启用 mDNS 和 LLMNR（发现协议）",
-        "[21] 配置 WSD 防火墙规则（端口 3702）",
-        "[22] 启用 IPP 和 Mopria 共享基础",
-        "[23] 解决 Hyper-V/WSL 虚拟网络冲突",
-        "[24] 安装旧版 LPR/LPD 协议",
-        "[25] 远程网络打印机发现",
-        "[26] WSD 到标准 TCP/IP 端口转换器",
-        "[27] 网络套接字重新初始化（选择性清理）",
-        "[28] 恢复网络配置文件（自动监视）",
-        "[29] 手动注入标准 TCP/IP 端口",
-        "[30] 强制初始化 WSD 打印设备"
-    )
-
-    $col2 = @(
-        "[31] 硬重置打印后台处理程序（清除队列）",
-        "[32] 重新初始化 RPC 和 DCOM 服务",
-        "[33] 远程目标后台处理程序重启",
-        "[34] 配置后台处理程序崩溃时自动重启",
-        "[35] 清除过期后台处理程序依赖项",
-        "[36] 部署后台处理程序监视（每 5 分钟审计）",
-        "[37] 强制清除打印队列 (.shd/.spl)",
-        "[38] 后台处理程序依赖项注册表重置",
-        "[39] 驱动管理（打印服务器属性）",
-        "[40] 禁用打印驱动隔离",
-        "[41] 通用打印类驱动 V4 修复",
-        "[42] 切换 PCL 与 PostScript 驱动模式",
-        "[43] 孤立驱动清理 (pnputil)",
-        "[44] 绕过「驱动当前正在使用」",
-        "[45] 幽灵 USB 端口和副本清除器",
-        "[46] 强制移除幽灵打印机",
-        "[47] 修复 Microsoft Edge / UWP 打印",
-        "[48] 重新安装 Microsoft Print to PDF/XPS",
-        "[49] 浏览器打印沙箱修复 (Chromium)",
-        "[50] 强制永久默认打印机",
-        "[51] 强制设置默认打印机（注册表绕过）",
-        "[52] 修复 RDP 打印机终端服务",
-        "[53] 自动清理打印机共享名称",
-        "[54] 降级 LSA 保护（旧版身份验证）",
-        "[55] 绕过智能应用控制 (SAC)",
-        "[56] 绕过高级 ServerList 即插即用",
-        "[57] 绕过 UAC 管理员网络令牌筛选",
-        "[58] 强制 NTLMv2 响应合规性",
-        "[59] 管理 Windows 受保护打印 (WPP)"
-    )
-
-    $col3 = @(
-        "[60] 将凭据永久注入凭据管理器",
-        "[61] 清除凭据管理器中的过期凭据",
-        "[62] 绕过凭据保护（严格 NTLM）",
-        "[63] 跨用户凭据映射",
-        "[64] 执行前注册表备份（后台处理程序）",
-        "[65] 从备份回滚注册表",
-        "[66] 生成系统还原点（安全）",
-        "[67] 系统文件检查器和 DISM 还原",
-        "[68] 重启 BITS（后台传输）",
-        "[69] Windows 更新与阻止管理",
-        "[70] 启动原生 Windows 疑难解答",
-        "[71] 强制打印机在线状态",
-        "[72] 启动 Services.msc",
-        "[73] 检测系统版本和构建架构",
-        "[74] Ping 与端口 445/135 诊断",
-        "[75] 查看执行日志",
-        "[76] 审计最近 20 条打印服务错误日志",
-        "[77] 系统诊断审计",
-        "[78] PrintService 事件日志解析器（前 5 条）",
-        "[79] 生成 HTML 诊断报告",
-        "[80] 检测 GPO 干预（策略扫描）",
-        "[81] PrintBRM（备份/还原迁移）",
-        "[82] 启用 SMB 来宾访问并取消匿名阻止",
-        "[83] 极端修复路径（Win 11 24H2/25H2/26H2+ 和 ARM64）",
-        "[84] 全部修复（50 项自动修复）",
-        "[85] 静默全部修复并重启（零提示）",
-        "[86] 映射本地端口到 UNC 路径（绕过 0x00000709）",
-        "[87] 移除已注入的本地端口 (UNC)",
-        "[88] 重启系统",
-        "[89] 退出脚本"
-    )
-
-    $maxRows = 30
-    for ($i = 0; $i -lt $maxRows; $i++) {
-        $line = ""
-
-        # 第一列
-        if ($i -lt $col1.Count) {
-            $line += PadRightDisplay (" " + $col1[$i]) ($cw1 + 1)
-        } else {
-            $line += (' ' * ($cw1 + 1))
-        }
-        $line += " "
-
-        # 第二列
-        if ($i -lt $col2.Count) {
-            $line += PadRightDisplay $col2[$i] $cw2
-        } else {
-            $line += (' ' * $cw2)
-        }
-        $line += " "
-
-        # 第三列
-        if ($i -lt $col3.Count) {
-            $line += PadRightDisplay $col3[$i] $cw3
-        } else {
-            $line += (' ' * $cw3)
-        }
-
-        Write-Host $line -ForegroundColor Green
-    }
-
-    Write-Host ("-" * $totalW) -ForegroundColor Red
-    $noteLine1 = " :   提示: ".PadRight($totalW - 2) + ":"
-    $noteLine2 = " :   [84] 全部修复 (50 步) | [83] 极端修复路径 (Win11) | [85] 静默全部修复 ".PadRight($totalW - 2) + ":"
-    $noteLine3 = " :   [?] 帮助 | [? 7] 详情 | [? all] HTML | 提示：若出现「检查打印机名称」错误，请使用选项 [86] ".PadRight($totalW - 2) + ":"
-
-    Write-Host $noteLine1 -ForegroundColor Red
-    Write-Host $noteLine2 -ForegroundColor Red
-    Write-Host $noteLine3 -ForegroundColor Green
-    Write-Host ("-" * $totalW) -ForegroundColor Red
+    Show-Header
     Write-Host ""
-    Write-Host "请输入选项: " -NoNewline
+    switch ($script:lang) {
+        "ZH" {
+            Write-Host "  请选择修复分类:" -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "  [1] 快速与自动化解决方案(ALLFIX 与现代 Win 11)" -ForegroundColor Green -NoNewline
+            Write-Host "  <-- 推荐" -ForegroundColor Red
+            Write-Host "  [2] 修复特定错误代码(0x11b、0x709、0xbc4、0x040 等)" -ForegroundColor White
+            Write-Host "  [3] 网络、文件和打印机共享(SMB)与防火墙" -ForegroundColor White
+            Write-Host "  [4] 后台打印程序服务与打印队列维护" -ForegroundColor White
+            Write-Host "  [5] 驱动管理与幽灵 / USB 打印机清理" -ForegroundColor White
+            Write-Host "  [6] 凭据、访问权限与安全(Vault、LSA、UAC)" -ForegroundColor White
+            Write-Host "  [7] 端口映射与手动连接(UNC 端口映射与 TCP/IP)" -ForegroundColor White
+            Write-Host "  [8] 备份、系统诊断与恢复" -ForegroundColor White
+            Write-Host ""
+            Write-Host "  [9] 帮助与使用指南" -ForegroundColor Cyan
+            Write-Host "  [L] 切换语言 / Switch Language" -ForegroundColor Yellow
+            Write-Host "  [0] 退出程序" -ForegroundColor DarkGray
+            Write-Host ""
+            Write-Host ("-" * 86) -ForegroundColor Cyan
+            Write-Host "  [快捷键提示]: 输入菜单编号 (1-9),按 [L] 切换语言,或直接输入经典" -ForegroundColor Gray
+            Write-Host "                   代码如 84 (全部修复)、83 (深度修复)、64 (备份)、86 (UNC)。" -ForegroundColor Gray
+            Write-Host ("-" * 86) -ForegroundColor Cyan
+            Write-Host "请选择: " -NoNewline -ForegroundColor Yellow
+        }
+        "EN" {
+            Write-Host "  SELECT REPAIR CATEGORY:" -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "  [1] Quick & Automated Solutions (ALLFIX & Modern Win 11)" -ForegroundColor Green -NoNewline
+            Write-Host "  <-- RECOMMENDED" -ForegroundColor Red
+            Write-Host "  [2] Fix Specific Error Codes (0x11b, 0x709, 0xbc4, 0x040, etc.)" -ForegroundColor White
+            Write-Host "  [3] Network, File & Printer Sharing (SMB) & Firewall" -ForegroundColor White
+            Write-Host "  [4] Print Spooler Service & Print Queue Maintenance" -ForegroundColor White
+            Write-Host "  [5] Driver Management & Ghost / USB Printer Cleanup" -ForegroundColor White
+            Write-Host "  [6] Credentials, Access Rights & Security (Vault, LSA, UAC)" -ForegroundColor White
+            Write-Host "  [7] Port Mapping & Manual Connections (UNC Port Map & TCP/IP)" -ForegroundColor White
+            Write-Host "  [8] Backup, System Diagnostics & Recovery" -ForegroundColor White
+            Write-Host ""
+            Write-Host "  [9] Help & Usage Guide" -ForegroundColor Cyan
+            Write-Host "  [L] Switch Language / Ganti Bahasa" -ForegroundColor Yellow
+            Write-Host "  [0] Exit Application" -ForegroundColor DarkGray
+            Write-Host ""
+            Write-Host ("-" * 86) -ForegroundColor Cyan
+            Write-Host "  [Shortcut Tips]: Enter menu (1-9), press [L] to switch language, or type classic" -ForegroundColor Gray
+            Write-Host "                   codes directly like 84 (AllFix), 83 (Extreme), 64 (Backup), 86 (UNC)." -ForegroundColor Gray
+            Write-Host ("-" * 86) -ForegroundColor Cyan
+            Write-Host "Select option: " -NoNewline -ForegroundColor Yellow
+        }
+        default {
+            Write-Host "  PILIH KATEGORI PERBAIKAN:" -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "  [1] Solusi Cepat & Otomatis (ALLFIX & Windows 11 Terbaru)" -ForegroundColor Green -NoNewline
+            Write-Host "  <-- REKOMENDASI UTAMA" -ForegroundColor Red
+            Write-Host "  [2] Perbaikan Kode Error Spesifik (0x11b, 0x709, 0xbc4, 0x040, dll.)" -ForegroundColor White
+            Write-Host "  [3] Pengaturan Jaringan, Berbagi (SMB) & Firewall" -ForegroundColor White
+            Write-Host "  [4] Layanan Print Spooler & Pembersihan Antrean Cetak" -ForegroundColor White
+            Write-Host "  [5] Pengelolaan Driver & Pembersihan Printer Hantu/USB" -ForegroundColor White
+            Write-Host "  [6] Kredensial, Hak Akses & Keamanan Windows (Vault, LSA, UAC)" -ForegroundColor White
+            Write-Host "  [7] Pemetaan Port & Sambungan Manual (UNC Port Map & TCP/IP)" -ForegroundColor White
+            Write-Host "  [8] Cadangan (Backup), Diagnostik & Pemulihan Sistem" -ForegroundColor White
+            Write-Host ""
+            Write-Host "  [9] Panduan & Bantuan Penggunaan" -ForegroundColor Cyan
+            Write-Host "  [L] Ganti Bahasa / Switch to English" -ForegroundColor Yellow
+            Write-Host "  [0] Keluar dari Aplikasi" -ForegroundColor DarkGray
+            Write-Host ""
+            Write-Host ("-" * 86) -ForegroundColor Cyan
+            Write-Host "  [Tips Pintasan]: Ketik nomor menu (1-9), tekan [L] ganti bahasa, atau ketik langsung" -ForegroundColor Gray
+            Write-Host "                   kode modul seperti 84 (AllFix), 83 (Extreme), 64 (Backup), 86 (UNC)." -ForegroundColor Gray
+            Write-Host ("-" * 86) -ForegroundColor Cyan
+            Write-Host "Pilih nomor menu: " -NoNewline -ForegroundColor Yellow
+        }
+    }
 }
 
-if ($script:silentNuke) {
-    AllFix-Core
-    exit
-}
+function Invoke-Module {
+    param([string]$Code)
+    $num = $Code.TrimStart('0')
+    if (-not $num) { return }
 
-do {
-    Show-Menu
-    $choice = Read-Host
-    $choice = $choice.Trim()
+    Clear-Screen
+    Write-Host ("=" * 86) -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  正在执行修复模块 [$Code]" } "EN" { "  EXECUTING REPAIR MODULE [$Code]" } default { "  MENJALANKAN MODUL PERBAIKAN [$Code]" } }) -ForegroundColor Yellow
+    Write-Host ("=" * 86) -ForegroundColor Cyan
+    Write-Host ""
 
-    if ($choice -match '^\?(.*)$' -or $choice -match '^help\s*(.*)$') {
-        $helpTopic = $Matches[1].Trim()
-        Show-Help -Topic $helpTopic
-        Write-Host "`n  [>] 按回车返回主菜单..." -ForegroundColor Yellow
-        Read-Host | Out-Null
-        continue
-    }
-
-    if ($choice -match '^\d+$' -and $choice.Length -gt 1) { $choice = $choice.TrimStart('0') }
-
-    if ($choice -match '^\d+$') {
-        Clear-Host
-        Write-Host "================================================================================" -ForegroundColor Cyan
-        Write-Host "  正在执行模块 [$choice]" -ForegroundColor Yellow
-        Write-Host "================================================================================" -ForegroundColor Cyan
-        Write-Host ""
-    }
-
-    switch ($choice) {
-        '1' { Fix-RpcAuthn0x0000011b }
-        '2' { Fix-Deep0x00000709 }
-        '3' { Fix-Discovery0x00000bc4 }
-        '4' { Fix-NetworkServices }
-        '5' { Fix-CSR }
-        '6' { Reset-SpoolerPerm }
-        '7' { Fix-Network0x00000040 }
-        '8' { Fix-DriverCopy0x00000002 }
-        '9' { Fix-RpcBitness0x0000007e }
+    switch ($num) {
+        '1'  { Fix-RpcAuthn0x0000011b }
+        '2'  { Fix-Deep0x00000709 }
+        '3'  { Fix-Discovery0x00000bc4 }
+        '4'  { Fix-NetworkServices }
+        '5'  { Fix-CSR }
+        '6'  { Reset-SpoolerPerm }
+        '7'  { Fix-Network0x00000040 }
+        '8'  { Fix-DriverCopy0x00000002 }
+        '9'  { Fix-RpcBitness0x0000007e }
         '10' { Reset-Network }
         '11' { Set-NetworkPrivate }
         '12' { Disable-PasswordSharing }
@@ -3102,7 +4282,7 @@ do {
         '27' { Reset-NetworkSockets }
         '28' { Rescue-NetworkProfile }
         '29' { Manage-TCPPort }
-        '30' { Start-Service WSDPrintDevice -ErrorAction SilentlyContinue; Write-Host "  [+] WSD 发现已启用" -ForegroundColor Green }
+        '30' { Enable-WSDDiscovery }
         '31' { Reset-Spooler }
         '32' { Check-RPC }
         '33' { Remote-SpoolerReset }
@@ -3112,7 +4292,7 @@ do {
         '37' { Nuke-PrintQueue }
         '38' { Reset-SpoolerDependencyRegistry }
         '39' { Manage-Drivers }
-        '40' { Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Print" -Name IsolationPolicy -Value 0 -Type DWord -Force; Write-Host "  [+] 隔离已禁用" -ForegroundColor Green }
+        '40' { Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Print" -Name IsolationPolicy -Value 0 -Type DWord -Force; Write-Host $(switch ($script:lang) { "ZH" { "  [+] 驱动隔离已禁用。" } "EN" { "  [+] Driver Isolation Disabled." } default { "  [+] Isolasi Driver Dinonaktifkan." } }) -ForegroundColor Green }
         '41' { Fix-V4ClassDriver }
         '42' { Switch-DriverMode }
         '43' { Sweep-OrphanedDrivers }
@@ -3161,13 +4341,63 @@ do {
         '86' { Map-LocalPortUNC }
         '87' { Remove-LocalPortUNC }
         '88' { Restart-PC }
-        '89' { Write-Log "工具已退出。" -Type "INFO"; exit }
-
-        default { Write-Host "`n  [-] 选择无效。请输入数字 1 - 89。" -ForegroundColor Red }
+        '89' { Write-Log $(switch ($script:lang) { "ZH" { "应用程序已终止。" } "EN" { "Application terminated." } default { "Aplikasi Dihentikan." } }) -Type "INFO"; exit }
+        default { Write-Host $(switch ($script:lang) { "ZH" { "  [-] 找不到模块 [$Code]。请输入有效代码 (1-89)。" } "EN" { "  [-] Module [$Code] not found. Enter valid code (1-89)." } default { "  [-] Modul [$Code] tidak ditemukan. Masukkan kode modul yang valid (1-89)." } }) -ForegroundColor Red }
     }
+}
 
-    if ($choice -ne '89' -and $choice -ne '88' -and $choice -ne '85') {
-        Write-Host "`n  [>] 按回车返回主菜单..." -ForegroundColor Yellow
-        Read-Host | Out-Null
-    }
-} while ($true)
+if ($script:silentNuke) {
+    AllFix-Core
+    exit
+}
+
+if ($script:skipInteractiveLoop -ne $true) {
+    do {
+        Show-MainMenu
+        $choice = Read-Host
+        if ($null -eq $choice) { exit }
+        if ([string]::IsNullOrWhiteSpace($choice)) { continue }
+        $choice = $choice.Trim()
+
+        if ($choice -match '^(l|lang|language)$') {
+            Toggle-AppLanguage
+            continue
+        }
+
+        if ($choice -match '^\?(.*)$' -or $choice -match '^help\s*(.*)$') {
+            $helpTopic = $Matches[1].Trim()
+            Show-Help -Topic $helpTopic
+            Pause-User
+            continue
+        }
+
+        if ($choice -match '^(0|exit|keluar|quit)$') {
+            Write-Log $(switch ($script:lang) { "ZH" { "用户终止了程序。" } "EN" { "Application Terminated by User." } default { "Aplikasi Dihentikan oleh Pengguna." } }) -Type "INFO"
+            Write-Host $(switch ($script:lang) { "ZH" { "`n  [*] 感谢您使用 Windows 打印机共享修复工具。`n" } "EN" { "`n  [*] Thank you for using Windows Printer Sharing Fix.`n" } default { "`n  [*] Terima kasih telah menggunakan Windows Printer Sharing Fix.`n" } }) -ForegroundColor Green
+            exit
+        }
+
+        switch ($choice) {
+            '1' { Show-Submenu1 }
+            '2' { Show-Submenu2 }
+            '3' { Show-Submenu3 }
+            '4' { Show-Submenu4 }
+            '5' { Show-Submenu5 }
+            '6' { Show-Submenu6 }
+            '7' { Show-Submenu7 }
+            '8' { Show-Submenu8 }
+            '9' { Show-Submenu9 }
+            default {
+                if ($choice -match '^\d+$') {
+                    Invoke-Module -Code $choice
+                    Pause-User
+                }
+                else {
+                    $errChoice = switch ($script:lang) { "ZH" { "`n  [-] 无法识别的选择 '$choice'。请输入数字 (1-9),按 [L] 切换语言,或输入 0 退出。" } "EN" { "`n  [-] Unrecognized choice '$choice'. Enter a number (1-9), [L] for language, or 0 to exit." } default { "`n  [-] Pilihan menu '$choice' tidak dikenali. Masukkan angka 1-9, [L] ganti bahasa, atau 0." } }
+                    Write-Host $errChoice -ForegroundColor Red
+                    Start-Sleep -Milliseconds 1200
+                }
+            }
+        }
+    } while ($true)
+}

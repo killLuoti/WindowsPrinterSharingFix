@@ -1,199 +1,291 @@
-# Windows 打印机共享修复工具
+# Windows 打印机共享修复工具 (Windows Printer Sharing Fix 中文三语版)
 
-![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011%20%7C%20Server-0078D6?logo=windows&logoColor=white)
-![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white)
-![Version](https://img.shields.io/badge/Version-2.3.2-blue)
+[![Windows Compatibility](https://img.shields.io/badge/Windows-10%20%7C%2011%20(24H2%2F25H2%2F26H2)%20%7C%20Server%202025-0078D6?logo=windows&logoColor=white)](https://github.com/khairudinfahmi/WindowsPrinterSharingFix/releases)
+[![Version](https://img.shields.io/badge/version-2.4.0-emerald.svg?style=flat)](https://github.com/khairudinfahmi/WindowsPrinterSharingFix/releases/tag/v2.4.0)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+[![Architecture](https://img.shields.io/badge/architecture-x64%20%7C%20ARM64-orange.svg)](https://github.com/khairudinfahmi/WindowsPrinterSharingFix)
+[![Language](https://img.shields.io/badge/language-简体中文%20%7C%20English%20%7C%20Bahasa%20Indonesia-green.svg)](https://github.com/khairudinfahmi/WindowsPrinterSharingFix)
 
-一个简单而强大的工具，用于修复常见的 Windows 打印机共享问题。适用于 Windows 10、11（包括 24H2+）、ARM64 和 Windows Server 2025。
+**Windows 打印机共享修复工具(三语版)** — 基于 [khairudinfahmi/WindowsPrinterSharingFix](https://github.com/khairudinfahmi/WindowsPrinterSharingFix) v2.4.0 的完整**三语汉化版**(简体中文 / English / Bahasa Indonesia,默认简体中文)。
 
----
+这是一个全自动 PowerShell 工具,用于诊断和修复 Windows 网络(工作组和 Active Directory 域)中的打印机共享和网络打印故障。
 
-## 修复内容
+适用于普通办公用户,同时为 IT 管理员、系统管理员和现场工程师提供详细的诊断和定向修复模块。
 
-Windows 更新经常破坏网络打印，显示难以理解的错误代码。此工具可修复以下错误：
-
-- `0x0000011b`、`0x00000709`、`0x00000bc4`、`0x80070035`、`0x00000040`、`0x0000007e` 等
-
----
-
-## 89 项修复选项
-
-### 第 1 列：核心与网络 [01-30]
-| # | 功能 |
-|---|---|
-| 01 | 修复错误 0x0000011b (RpcAuthnLevelPrivacy) |
-| 02 | 绕过错误 0x00000709 / 0x7c（即插即用） |
-| 03 | 绕过错误 0x00000bc4（未找到打印机） |
-| 04 | 修复错误 0x80070035（自动化网络服务） |
-| 05 | 禁用客户端渲染（错误 0x6d1） |
-| 06 | 修复错误 0x80070005（重置后台处理程序 ACL） |
-| 07 | 修复错误 0x00000040（网络不可用） |
-| 08 | 修复错误 0x00000002 (CopyFilesPolicy) |
-| 09 | 修复错误 0x0000007e（RPC 位数不匹配） |
-| 10 | 完整网络重置（DNS、Winsock、NetBIOS） |
-| 11 | 强制网络配置文件为专用 |
-| 12 | 强制禁用密码保护共享 |
-| 13 | 通过命名管道和 TCP 启用 RPC |
-| 14 | 配置防火墙文件和打印机共享 |
-| 15 | SMB 1.0 旧版协议管理（开/关） |
-| 16 | 禁用 SMB 签名（修复 Win 11 NAS 访问） |
-| 17 | 强制现代 SMB2/SMB3 拓扑 |
-| 18 | 将 SMB 置于网络提供程序顺序首位 |
-| 19 | 禁用 IPv6 协议栈 |
-| 20 | 启用 mDNS 和 LLMNR（发现协议） |
-| 21 | 配置 WSD 防火墙规则（端口 3702） |
-| 22 | 启用 IPP 和 Mopria 共享基础 |
-| 23 | 解决 Hyper-V/WSL 虚拟网络冲突 |
-| 24 | 安装旧版 LPR/LPD 协议 |
-| 25 | 远程网络打印机发现 |
-| 26 | WSD 到标准 TCP/IP 端口转换器 |
-| 27 | 网络套接字重新初始化（选择性清理） |
-| 28 | 恢复网络配置文件（自动监视） |
-| 29 | 手动注入标准 TCP/IP 端口 |
-| 30 | 强制初始化 WSD 打印设备 |
-
-### 第 2 列：后台处理程序、驱动与策略 [31-59]
-| # | 功能 |
-|---|---|
-| 31 | 硬重置打印后台处理程序（清除队列） |
-| 32 | 重新初始化 RPC 和 DCOM 服务 |
-| 33 | 远程目标后台处理程序重启 |
-| 34 | 配置后台处理程序崩溃时自动重启 |
-| 35 | 清除过期后台处理程序依赖项 |
-| 36 | 部署后台处理程序监视（每 5 分钟审计） |
-| 37 | 强制清除打印队列 (.shd/.spl) |
-| 38 | 后台处理程序依赖项注册表重置 |
-| 39 | 驱动管理（打印服务器属性） |
-| 40 | 禁用打印驱动隔离 |
-| 41 | 通用打印类驱动 V4 修复 |
-| 42 | 切换 PCL 与 PostScript 驱动模式 |
-| 43 | 孤立驱动清理 (pnputil) |
-| 44 | 绕过「驱动当前正在使用」 |
-| 45 | 幽灵 USB 端口和副本清除器 |
-| 46 | 强制移除幽灵打印机 |
-| 47 | 修复 Microsoft Edge / UWP 打印 |
-| 48 | 重新安装 Microsoft Print to PDF/XPS |
-| 49 | 浏览器打印沙箱修复 (Chromium) |
-| 50 | 强制永久默认打印机 |
-| 51 | 强制设置默认打印机（注册表绕过） |
-| 52 | 修复 RDP 打印机终端服务 |
-| 53 | 自动清理打印机共享名称 |
-| 54 | 降级 LSA 保护（旧版身份验证） |
-| 55 | 绕过智能应用控制 (SAC) |
-| 56 | 绕过高级 ServerList 即插即用 |
-| 57 | 绕过 UAC 管理员网络令牌筛选 |
-| 58 | 强制 NTLMv2 响应合规性 |
-| 59 | 管理 Windows 受保护打印 (WPP) |
-
-### 第 3 列：诊断与自动化 [60-89]
-| # | 功能 |
-|---|---|
-| 60 | 将凭据永久注入凭据管理器 |
-| 61 | 清除凭据管理器中的过期凭据 |
-| 62 | 绕过凭据保护（严格 NTLM） |
-| 63 | 跨用户凭据映射 |
-| 64 | 执行前注册表备份（后台处理程序） |
-| 65 | 从备份回滚注册表 |
-| 66 | 生成系统还原点（安全） |
-| 67 | 系统文件检查器和 DISM 还原 |
-| 68 | 重启 BITS（后台传输） |
-| 69 | Windows 更新与阻止管理 |
-| 70 | 启动原生 Windows 疑难解答 |
-| 71 | 强制打印机在线状态 |
-| 72 | 启动 Services.msc |
-| 73 | 检测系统版本和构建架构 |
-| 74 | Ping 与端口 445/135 诊断 |
-| 75 | 查看执行日志 |
-| 76 | 审计最近 20 条打印服务错误日志 |
-| 77 | 系统诊断审计 |
-| 78 | PrintService 事件日志解析器（前 5 条） |
-| 79 | 生成 HTML 诊断报告 |
-| 80 | 检测 GPO 干预（策略扫描） |
-| 81 | PrintBRM（备份/还原迁移） |
-| 82 | 启用 SMB 来宾访问并取消匿名阻止 |
-| 83 | 极端修复路径（Win 11 24H2/25H2/26H2+ 和 ARM64） |
-| 84 | 全部修复（50 项自动修复） |
-| 85 | 静默全部修复并重启（零提示） |
-| 86 | 映射本地端口到 UNC 路径（绕过 0x00000709） |
-| 87 | 移除已注入的本地端口 (UNC) |
-| 88 | 重启系统 |
-| 89 | 退出脚本 |
+完全支持 **Windows 10**、**Windows 11(包括 24H2/25H2/26H2+)**、**ARM64** 和 **Windows Server 2016/2019/2022/2025**。
 
 ---
 
-## 界面截图
+## v2.4.0 三语汉化版新特性
 
-```
- 用户: admin | 计算机名: OFFICE-PC | 系统: WINDOWS 11 PRO 26100 64位 | Windows 打印机共享修复工具 v2.3.2
- 时区: China Standard Time | 08.00.00
- 作者: @KHAIRUDINFAHMI (2026) | 汉化版
- ===============================================================================================================
- 核心修复与网络服务                    后台处理程序、驱动与策略                   诊断与自动化
- [01] 修复错误 0x0000011b              [31] 硬重置打印后台处理程序                [60] 将凭据永久注入凭据管理器
- ...
-```
-
----
-
-## 系统要求
-
-| 系统 | 支持状态 |
-|---|---|
-| Windows 10（所有版本） | 完全支持 |
-| Windows 11 21H2 - 23H2 | 完全支持 |
-| Windows 11 24H2 / 25H2 / 26H2+ | 支持（需要极端修复路径 [83]） |
-| Windows 11 ARM64（骁龙） | 支持 |
-| Windows Server 2012 / 2016 / 2019 / 2022 / 2025 | 完全支持 |
-| Windows 7、8、8.1 | 部分支持（仅注册表修复） |
+1. **三语引擎(简体中文 / English / Bahasa Indonesia)**:
+   - 在任意菜单或提示符按 **`[L]`** 即可动态循环切换语言(简体中文 → English → Bahasa Indonesia → 简体中文)。
+   - 默认语言为**简体中文**。用户语言偏好持久化保存在注册表(`HKCU:\Software\WindowsPrinterSharingFix\Language`)中。
+2. **实时系统健康横幅**:
+   - 控制台标题栏每次渲染菜单时都会检查并显示四个核心打印机共享组件的实时状态:
+     ```text
+     系统状态:后台打印程序 [运行中] | 网络 [专用] | SMB 签名 [正常] | 密码共享 [关闭]
+     ```
+   - 让您一眼发现网络配置问题。
+3. **重新编排的控制台布局(人性化 UI)**:
+   - 用 **8 个分类子菜单 + 1 个交互式帮助系统** 取代旧版单屏菜单,适配标准 86 列控制台。
+4. **基于角色的优化方案**:
+   - **打印机主机 / 服务器方案(子菜单 1 的 [3])**:适用于直接连接 USB 或本地打印机的主机电脑。
+   - **客户端工作站方案(子菜单 1 的 [4])**:适用于通过本地网络连接的客户端电脑。
+5. **现代 Windows 11 安全缓解措施**:
+   - 绕过现代 RPC over Named Pipes 限制(`RpcOverNamedPipes`、`RegisterSpoolerRemoteRpcEndPoint`)。
+   - 缓解 Windows 11 24H2 引入的强制 SMB 签名。
+   - 为非域工作组拓扑配置 NTLMv2 回退。
+6. **直接操作快捷方式**:
+   - 可直接在主菜单输入经典模块代码(如 `84` 全部修复、`83` 深度修复、`86` UNC 端口映射、`31` 重置后台打印程序)而无需进入子菜单。
 
 ---
 
-## 安装说明
+## Quick Start Guide
 
-### 下载即用版
+### 方式一:官方 Windows 安装包(推荐)
+1. 从最新 [GitHub Release](https://github.com/khairudinfahmi/WindowsPrinterSharingFix/releases) 下载 `WindowsPrinterSharingFix_CN_Installer.exe`。
+2. 运行安装向导(包含开始菜单快捷方式、桌面启动器和自动卸载程序)。
+3. 从桌面启动 **Windows 打印机共享修复工具**(自动提升到管理员权限)。
 
-从 [Releases](https://github.com/khairudinfahmi/WindowsPrinterSharingFix/releases) 页面下载预编译的二进制文件：
+### 方式二:便携版可执行文件 (.EXE)
+1. 从 [GitHub Releases](https://github.com/khairudinfahmi/WindowsPrinterSharingFix/releases) 下载 `WindowsPrinterSharingFix_CN.exe`。
+2. 右键选择 **以管理员身份运行**。
 
-| 文件 | 说明 |
-|---|---|
-| `WindowsPrinterSharingFix_CN.exe` | 便携式可执行文件 — 直接以管理员身份运行 |
-| `WindowsPrinterSharingFix_CN_Installer.exe` | 完整安装程序（包含开始菜单快捷方式和代码签名） |
-
-### 方法 1：便携版（推荐）
-
-1. 下载 `WindowsPrinterSharingFix_CN.exe`
-2. 右键单击 → 以管理员身份运行
-3. 输入 `64` → 回车（执行注册表备份）
-4. 输入 `84` → 回车（执行全部修复 - 50 项自动修复）
-5. 重启系统
-
-### 方法 2：从源码编译
-
-需要：
-- PowerShell 5.1+
-- [ps2exe](https://www.powershellgallery.com/packages/ps2exe) 模块（编译脚本会自动安装）
-- [Inno Setup 6](https://jrsoftware.org/isdl.php)（用于编译安装程序）
-
+### 方式三:直接 PowerShell 执行
+以管理员身份打开 PowerShell,运行:
 ```powershell
-# 从项目根目录执行：
-.\build\Compile-ToExe.ps1
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+& ".\src\WindowsPrinterSharingFix.ps1"
 ```
 
-## 注意事项
+### Option 4: Unattended CLI Switches (Automation & RMM)
+Execute specialized playbooks directly via command line:
+```powershell
+# Run the complete 50-step ALLFIX playbook unattended
+.\WindowsPrinterSharingFix.exe -AllFix
 
-- **需要管理员权限**：此工具必须以管理员身份运行才能修改注册表键和管理 Windows 子系统服务。
-- **备份必须执行**：在运行任何自动修复**之前**，请务必执行注册表备份（选项 [64]）。
-- **必须重启**：需要重启系统才能提交注册表更改并重启网络堆栈。
-- **离线支持**：此工具完全离线运行，无需网络连接。
+# Run ALLFIX silently and automatically reboot the system upon completion
+.\WindowsPrinterSharingFix.exe -SilentAllFix
 
-## 许可证
+# Execute the modern Windows 11 24H2/25H2/26H2 remediation playbook
+.\WindowsPrinterSharingFix.exe -ExtremePath
 
-本项目基于 [GPL-3.0 许可证](LICENSE) 开源发布。
+# Run full system diagnostics and export an interactive HTML report
+.\WindowsPrinterSharingFix.exe -Diagnose
 
-## 原作者
+# Launch in English explicitly
+.\WindowsPrinterSharingFix.exe -Language EN
+```
 
-[@khairudinfahmi](https://github.com/khairudinfahmi) — 2026
+---
 
-## 汉化版
+## Menu & Submenu Reference (v2.4.0)
 
-此版本为完整汉化版，翻译了所有用户界面字符串、菜单项、帮助文本、文档和提示信息。
+The main console provides 89 direct execution module codes (`1`–`89`), structured into 8 dedicated categories (73 interactive submenu options) plus an interactive help engine:
+
+```text
+======================================================================================
+   WINDOWS PRINTER SHARING FIX  |  Windows Printer Sharing Solution
+   Version: 2.4.0  |  OS: WINDOWS 11 PRO 26200 64-BIT
+   Computer: WORKSTATION-01  |  User: Administrator
+   SYSTEM HEALTH: Spooler [ACTIVE] | Network [PRIVATE] | SMB Signing [MATCHED] | Password Sharing [OFF]
+======================================================================================
+
+  [1] Quick & Automated Solutions (ALLFIX & Modern Win 11)
+  [2] Fix Specific Error Codes (0x11b, 0x709, 0xbc4, 0x040, etc.)
+  [3] Network, File & Printer Sharing (SMB) & Firewall
+  [4] Print Spooler Service & Print Queue Maintenance
+  [5] Driver Management & Ghost / USB Printer Cleanup
+  [6] Credentials, Access Rights & Security (Vault, LSA, UAC)
+  [7] Port Mapping & Manual Connections (UNC Port Map & TCP/IP)
+  [8] Backup, System Diagnostics & Recovery
+  [9] Help & Usage Guide
+
+  [L] Switch Language (English / Indonesia)
+  [?] Display Module Help (e.g., ? 84 or help 86)
+  [0] Exit Application
+```
+
+---
+
+### Submenu 1: Quick & Automated Solutions (ALLFIX & Modern Win 11)
+One-click fix routines that cover the most common and complex sharing failures.
+
+| # | Menu Option (Exact Console String) | Code | Technical Description & Scope |
+| :---: | :--- | :---: | :--- |
+| **1** | **ALLFIX - Run 50 Automated Fixes Simultaneously** | `[84]` | **Primary Recommendation**: Runs 50 successive repair steps across registry, Group Policy, RPC, SMB, firewall, and spooler. Resolves 98% of office network printing issues. |
+| **2** | **Extreme Path for Modern Windows 11 (24H2 / 25H2 / 26H2 & ARM64)** | `[83]` | Deploys deep hardening mitigations for recent Windows 11 builds: enables RPC over Named Pipes, relaxes strict SMB signing, and configures non-domain Kerberos fallback. |
+| **3** | **Optimize Host / Print Server PC (Connected directly to printer)** | `Playbook` | Dedicated playbook for the PC physically connected to the printer: enables remote RPC spooler endpoint, sets Private network, opens guest access, configures firewall/WSD, and deploys Watchdog. |
+| **4** | **Optimize Client PC (Connecting to shared printer over network)** | `Playbook` | Dedicated playbook for client PCs connecting to shared printers: enables RPC Named Pipes, bypasses Point & Print elevation, disables client SMB signing, and flushes DNS. |
+| **5** | **Silent ALLFIX (Automated Fixes + Immediate Reboot)** | `[85]` | Executes the 50-step ALLFIX routine without interactive prompts and immediately reboots the computer upon completion (ideal for sysadmins and unattended deployment). |
+| **6** | **Manage Windows Updates & Block Printer-Breaking Patches** | `[69]` | Pauses updates for 35 days, provides tools to roll back breaking cumulative updates, or toggles Windows Update services to protect working print configurations. |
+
+---
+
+### Submenu 2: Fix Specific Error Codes (0x11b, 0x709, 0xbc4, 0x040, etc.)
+Targeted fix modules mapped to specific hexadecimal Windows network print error codes.
+
+| # | Menu Option (Exact Console String) | Code | Root Cause & Technical Fix |
+| :---: | :--- | :---: | :--- |
+| **1** | **Error 0x0000011b - Patch RPC Authentication Block (RpcAuthnLevelPrivacy)** | `[01]` | Mitigates CVE-2021-1678 RPC authentication requirements by setting `RpcAuthnLevelPrivacyEnabled = 0` under `Control\Print`. |
+| **2** | **Error 0x00000709 / 0x7c - Network Printer Connection Failure (Point and Print / RPC)** | `[02]` | Resolves printer name/driver binding failures by setting `CopyFilesPolicy = 1`, `ForceLegacyPrintDriver = 1`, and standardizing multi-layer RPC protocol bindings. |
+| **3** | **Error 0x00000bc4 - No Printers Were Found (Enforce RPC Named Pipes)** | `[03]` | Fixes "No printers were found" by forcing `RpcUseNamedPipeProtocol = 1` and `RpcProtocols = 7` under Group Policy Printer overrides. |
+| **4** | **Error 0x80070035 - Network Path Not Found (Initialize Discovery Services)** | `[04]` | Fixes "The network path was not found" by automating and starting Discovery services (`fdPHost`, `FDResPub`, `SSDPSRV`, `upnphost`). |
+| **5** | **Error 0x000006d1 - Disable Client-Side Rendering (CSR)** | `[05]` | Fixes Client-Side Rendering (CSR) spooling crashes by setting `DisableClientSideRendering = 1`, shifting rendering directly to the host spooler. |
+| **6** | **Error 0x80070005 - Access Denied to Spooler Folder (Reset Universal ACL Permissions)** | `[06]` | Resolves "Access Denied" on print queues by granting Full Control ACL permissions to universal `Everyone` (`S-1-1-0`) on `C:\Windows\System32\Spool\Printers`. |
+| **7** | **Error 0x00000040 - Network Name Is No Longer Available (KeepConn & Ports)** | `[07]` | Fixes "The specified network name is no longer available" by setting SMB `KeepConn = 1`, disabling NetBIOS multi-channel conflicts, and clearing stale sessions. |
+| **8** | **Error 0x00000002 - Driver File Copy Policy Block (CopyFilesPolicy Ingestion)** | `[08]` | Resolves driver file copy errors during client connection by enabling `UseSharedSpooler = 1`. |
+| **9** | **Error 0x0000007e - RPC Driver Bitness Mismatch (32-bit & 64-bit Systems)** | `[09]` | Fixes 32-bit and 64-bit cross-architecture driver mismatch errors by injecting RPC bitness compatibility registry keys. |
+
+---
+
+### Submenu 3: Network, File & Printer Sharing (SMB) & Firewall
+Ensures underlying network connectivity, protocol compatibility, and firewall port clearance.
+
+| # | Menu Option (Exact Console String) | Code | Details & Technical Benefit |
+| :---: | :--- | :---: | :--- |
+| **1** | **Switch Network Profile to Private (Required for printer sharing)** | `[11]` | Changes current network connection profile from Public to Private, enabling Windows sharing and file/printer discovery. |
+| **2** | **Open Passwordless Sharing (Guest Access & Anonymous Sharing)** | `[12]` | Sets `AllowInsecureGuestAuth = 1`, `everyoneincludesanonymous = 1`, and `LimitBlankPasswordUse = 0` for local LAN access. |
+| **3** | **Disable SMB Signing Requirement (Fix Win 11 connection to Printer/NAS)** | `[16]` | Disables `RequireSecuritySignature` on LanmanWorkstation and LanmanServer to resolve connection refusals on Windows 11 24H2+. |
+| **4** | **Manage SMB Protocols (Ensure Modern SMB2/SMB3 & SMB 1.0 Settings)** | `[15] & [17]` | Manages modern SMB2/SMB3 protocol engines and provides an emergency toggle for legacy SMBv1 for vintage print equipment. |
+| **5** | **Open Windows Firewall Rules for File & Printer Sharing (Including WSD Port 3702)** | `[14] & [21]` | Authorizes inbound TCP 445, 139, 135 and UDP 137, 138, 3702 (WSD), 5353 (mDNS) through Windows Defender Firewall. |
+| **6** | **Enable Automatic Device Discovery (mDNS, LLMNR, and WSD Discovery)** | `[20] & [30]` | Starts the complete Windows discovery stack to ensure network printers appear in Windows Explorer and setup dialogs. |
+| **7** | **Set Network Provider Order & Resolve Virtual Hyper-V/WSL Conflicts** | `[18] & [23]` | Prioritizes physical network adapters over virtual interfaces (Hyper-V, WSL, VMware, VPNs) to prevent routing confusion. |
+| **8** | **Total Network & Socket Reset (Winsock, Flush DNS, NetBIOS & Port Purge)** | `[10] & [27]` | Flushes DNS cache, resets Winsock catalog, resets TCP/IP stack (`netsh int ip reset`), and purges NetBIOS tables (`nbtstat -RR`). |
+| **9** | **Disable IPv6 Protocol Stack (Use if office LAN is pure IPv4)** | `[19]` | Disables IPv6 binding on network adapters in pure IPv4 environments, preventing link-local resolution timeouts. |
+| **10** | **Install IPP / Mopria Sharing Foundation & Legacy LPR/LPD Protocols** | `[22] & [24]` | Enables Internet Printing Protocol (IPP) and Unix LPR legacy port support for modern multi-function devices and industrial copiers. |
+
+---
+
+### Submenu 4: Print Spooler Service & Print Queue Maintenance
+Resolves Print Spooler service crashes, clears jammed documents, and establishes automated self-healing.
+
+| # | Menu Option (Exact Console String) | Code | Details & Technical Benefit |
+| :---: | :--- | :---: | :--- |
+| **1** | **Clean Spooler Reset & Purge Jammed Print Queue Files (.spl/.shd)** | `[31] & [37]` | Terminates hung spooler processes, deletes all corrupted print artifacts (`.spl` and `.shd`) from `PRINTERS`, and performs a clean restart. |
+| **2** | **Configure Automatic Spooler Recovery on Crash (Auto-Restart)** | `[34]` | Configures Windows Service Controller to automatically restart the Print Spooler on first, second, and subsequent service failures. |
+| **3** | **Deploy Spooler Watchdog Scheduled Task (Monitors every 5 minutes)** | `[36]` | Registers a scheduled task that audits Spooler service health every 5 minutes and auto-starts it if terminated unexpectedly. |
+| **4** | **Repair & Reset Spooler Registry Dependencies (RPCSS & HTTP)** | `[35] & [38]` | Restores factory spooler dependencies (`RPCSS` and `http`), stripping corrupted third-party dependencies that prevent startup. |
+| **5** | **Restart Core System RPC & DCOM Services** | `[32]` | Audits and verifies core RPC foundation services (`RpcSs`, `DcomLaunch`) to eliminate *"The RPC server is unavailable"* errors. |
+| **6** | **Restart Remote Spooler Service on Target Computer** | `[33]` | Issues a remote spooler restart command across the network via PowerShell remoting/DCOM without requiring physical access. |
+
+---
+
+### Submenu 5: Driver Management & Ghost / USB Printer Cleanup
+Manages driver locks, uninstalls legacy driver packages cleanly, and mitigates Windows 11 driver isolation issues.
+
+| # | Menu Option (Exact Console String) | Code | Details & Technical Benefit |
+| :---: | :--- | :---: | :--- |
+| **1** | **Force-Kill Locking Driver Processes ('Driver is in use')** | `[44]` | Forcefully terminates `splwow64.exe`, `printfilterpipelinesvc.exe`, and driver isolation host processes holding locks on driver DLLs. |
+| **2** | **Disable Print Driver Isolation (Prevent separate process crashes)** | `[40]` | Sets `IsolationPolicy = 0` under `Control\Print` to prevent driver isolation sandboxes from crashing during inter-process RPC calls. |
+| **3** | **Clean Stale & Corrupted Drivers (Driver Sweeper via pnputil)** | `[43]` | Scans and uninstalls orphaned OEM print driver packages from the Windows Driver Store using native `pnputil`. |
+| **4** | **Remove Ghost & Duplicate USB Printers (Copy 1, Copy 2, dead ports)** | `[45] & [46]` | Purges ghost printer instances ("Copy 1", "Copy 2") and unbinds stale virtual USB printer ports left by physical re-plugging. |
+| **5** | **Repair Universal V4 Print Class Drivers & Switch PCL / PostScript Mode** | `[41] & [42]` | Reconfigures modern V4 print class drivers for network sharing and toggles driver rendering mode between RAW, PCL, and PostScript. |
+| **6** | **Fix Web Browser Printing (Chrome/Edge Sandbox & Modern UWP Apps)** | `[47] & [49]` | Resolves blank or frozen print dialogs in Google Chrome, Microsoft Edge sandbox, and Windows Store UWP applications. |
+| **7** | **Reinstall Windows Virtual Built-in Printers (Microsoft Print to PDF / XPS)** | `[48]` | Reinstalls missing system virtual print devices (*Microsoft Print to PDF* and *Microsoft XPS Document Writer*). |
+| **8** | **Lock Default Printer Permanently (Prevent automatic location switching)** | `[50] & [51]` | Permanently locks preferred default printer in HKCU registry and disables automatic Windows default printer reassignment. |
+| **9** | **Sanitize Printer Share Names (Strip spaces and illegal characters)** | `[53]` | Scans shared printer names and automatically strips spaces and illegal characters (`!@#$%^&*`) to prevent SMB network rejection. |
+| **10** | **Open Print Server Properties Management Console** | `[39]` | Launches the native Windows Print Server Properties MMC management interface (`printui.exe /s2`) for advanced driver and form control. |
+| **11** | **Force-Uninstall Specific Problematic Printer** | `[46]` | Interactive utility to force-remove a specific locked printer queue, clearing spooler locks and registry registrations. |
+
+---
+
+### Submenu 6: Credentials, Access Rights & Security (Vault, LSA, UAC)
+Manages multi-machine authentication, Windows Vault credentials, and Windows 11 security policies.
+
+| # | Menu Option (Exact Console String) | Code | Details & Technical Benefit |
+| :---: | :--- | :---: | :--- |
+| **1** | **Save Printer Credentials (Username & Password) to Windows Vault** | `[60]` | Writes target printer host credentials directly into the Windows Credential Manager (`cmdkey`) for persistent non-interactive access. |
+| **2** | **Clean Stale/Outdated Printer Credentials from Windows Vault** | `[61]` | Scans and deletes expired or invalid printer host credentials stored in Windows Vault to resolve persistent "Access Denied" errors. |
+| **3** | **Deploy Login Credentials to All User Profiles on This Machine** | `[63]` | Replicates network printer authentication tokens across all user profiles on the workstation via multi-user RunOnce deployment. |
+| **4** | **Bypass Administrator UAC Network Token Filter for Workgroups** | `[57]` | Sets `LocalAccountTokenFilterPolicy = 1` to prevent Windows from stripping administrative tokens during remote network access in Workgroups. |
+| **5** | **Align NTLMv2 Authentication Response (LmCompatibilityLevel)** | `[58]` | Configures `LmCompatibilityLevel = 2` or `3` to align NTLM authentication across heterogeneous Windows versions. |
+| **6** | **Relax Strict Security Protections (LSA Protection, Smart App Control, Credential Guard)** | `[54], [55], [62]` | Relaxes strict enterprise security mitigations (LSA RunAsPPL, SAC, and Credential Guard) that block legacy NTLM authentication on Workgroups. |
+| **7** | **Manage Windows Protected Print / WPP (Win 11 Driver Mode)** | `[59]` | Configures Windows 11 Windows Protected Print (WPP) mode to prevent blocking legacy third-party V3 printer drivers. |
+| **8** | **Bypass Point and Print Driver Restrictions (Elevation Override)** | `[56]` | Bypasses Point and Print driver installation elevation requirements (CVE-2021-34527 PrintNightmare mitigations) without disabling driver validation. |
+| **9** | **Fix Printer Redirection on Remote Desktop Connections (RDP)** | `[52]` | Restores client printer redirection inside Remote Desktop sessions by correcting Terminal Services registry configuration keys. |
+
+---
+
+### Submenu 7: Port Mapping & Manual Connections (UNC Port Map & TCP/IP)
+Direct connection methods when standard Windows Network Discovery fails.
+
+| # | Menu Option (Exact Console String) | Code | Details & Technical Benefit |
+| :---: | :--- | :---: | :--- |
+| **1** | **Map Local Port to UNC Share (Ultimate Bypass for Error 0x00000709)** | `[86]` | Direct local port redirect that maps a local printer port directly to a remote host UNC path (`\\HOST\PRINTER`), bypassing Point & Print entirely. |
+| **2** | **Remove Previously Created Local UNC Port Mapping** | `[87]` | Cleans up and unbinds previously created local UNC port mappings from the print spooler. |
+| **3** | **Convert WSD Printer Port to Stable Standard TCP/IP Socket** | `[26]` | Converts unreliable WSD (Web Services on Devices) ports to standard Raw TCP/IP ports (Port 9100) to eliminate phantom offline status. |
+| **4** | **Add Standard TCP/IP Printer Port Manually** | `[29]` | Creates a direct Raw TCP/IP printing port (Port 9100) using the target printer's static IP address via WMI. |
+| **5** | **Scan & Discover Shared Printers on Remote Network Host** | `[25]` | Scans a remote host IP or computer name via WMI and net view to discover all exposed printer shares and their operational states. |
+
+---
+
+### Submenu 8: Backup, System Diagnostics & Recovery
+Safety mechanisms to back up system state prior to modifications and deep diagnostic analysis tools.
+
+| # | Menu Option (Exact Console String) | Code | Details & Technical Benefit |
+| :---: | :--- | :---: | :--- |
+| **1** | **Backup Printer & Network Registry (Always Recommended Before Fixes)** | `[64]` | Exports 5 critical registry hives (`Print`, `PrintersPolicy`, `LanmanWorkstation`, `LanmanServer`, `Lsa`) to `C:\WindowsPrinterSharingFixBackup`. |
+| **2** | **Rollback Registry from Previous Backup Snapshot** | `[65]` | Re-imports the backup `.reg` hives to restore original system state whenever needed. |
+| **3** | **Create System Restore Point for System Rollback** | `[66]` | Generates an immediate Windows System Restore Point with automatic frequency-limit bypass. |
+| **4** | **Scan & Repair System Files (SFC /scannow & DISM)** | `[67]` | Runs `sfc /scannow` and `dism /online /cleanup-image /restorehealth` to repair corrupted Windows core components. |
+| **5** | **Test Network Connectivity & Scan Ports (Ping & Port 135/445)** | `[74]` | Performs raw ICMP echo and TCP socket handshakes on Port 445 (SMB) and Port 135 (RPC) to verify network route and firewall clearance. |
+| **6** | **Audit & Analyze Print Service Event Logs (Event Log Parser)** | `[76] & [78]` | Inspects Windows Event Logs for print service errors and maps event IDs to specific recommended fixes. |
+| **7** | **Generate Interactive HTML Diagnostic Report** | `[79]` | Compiles hardware, network, spooler, driver, and registry status into a standalone interactive HTML diagnostic report. |
+| **8** | **Scan Active Directory Domain Policy / GPO Intervention** | `[80]` | Detects whether active Domain Group Policy Objects (GPO) are overriding local printer sharing registry configurations. |
+| **9** | **Backup & Migrate Printers to Another Computer (PrintBRM)** | `[81]` | Backs up or migrates complete printer queues, driver packages, and ports across computers using native Windows `PrintBRM.exe`. |
+| **10** | **Force Printer Status to 'Online' (If stuck offline)** | `[71]` | Sends WMI instructions to clear hung error flags on print queues and force offline printers back to *Online* state. |
+| **11** | **Open Windows Services Console (services.msc)** | `[72]` | Launches the native Windows Services Management Console (`services.msc`) for manual service management. |
+| **12** | **Open Repair Execution Log File (Log Manager)** | `[75]` | Opens the live execution audit log (`C:\WindowsPrinterSharingFixLog.txt`) in Notepad for review. |
+| **13** | **Quick System Diagnostics Audit** | `[77]` | Runs a rapid health audit covering Spooler state, network profile, SMB signing status, and password sharing configuration. |
+
+---
+
+### Submenu 9: Help & Usage Guide
+Built-in technical reference, diagnostic tools, and usage guidance for every module.
+
+| # | Menu Option (Exact Console String) | Code | Details & Technical Benefit |
+| :---: | :--- | :---: | :--- |
+| **1** | **Show Quick Guide & Office Troubleshooting Flow** | `[Help]` | Displays an interactive terminal guide detailing standard operating procedures for resolving office printer sharing problems. |
+| **2** | **Open Offline HTML Documentation in Browser** | `[HTML]` | Launches the complete interactive offline HTML documentation (`docs/documentation.html`) in your default web browser. |
+| **3** | **Detect Current Windows Version & Architecture** | `[73]` | Audits and displays Windows version, build number, architecture (x64/ARM64), and feature update release code. |
+| **4** | **Run Windows Built-in Printer Troubleshooter (msdt)** | `[70]` | Launches the native Microsoft Support Diagnostic Tool (`msdt.exe`) printer troubleshooting wizard. |
+
+---
+
+## Under the Hood: Resilience and Persistence
+
+When automated playbooks (**ALLFIX [84]** or **Extreme Path [83]**) are executed, the engine applies multiple safety and persistence mechanisms:
+
+1. **Group Policy Synchronization (`gpupdate /force`)**: Refreshes local Group Policy before writing registry overrides to prevent immediate policy rollback.
+2. **Pre-Change Registry Backup**: Backs up 5 critical registry hives to `C:\WindowsPrinterSharingFixBackup` before making any modifications.
+3. **Resilient Scheduled Tasks**:
+   - `PrinterFixPostUpdate` (triggered at system boot) & `PrinterFixDaily` (daily at 10:00 AM): Re-applies critical sharing parameters if monthly Windows Updates (*Patch Tuesday*) revert configurations.
+   - `SpoolerWatchdog` (runs every 5 minutes): Actively monitors the Print Spooler service and restarts it if terminated by buggy third-party drivers.
+   - *Configured to bypass laptop battery restrictions so background protection remains active on DC power.*
+4. **Clean Session & Ticket Eviction**: Executes `klist purge`, `ipconfig /flushdns`, and `nbtstat -RR` to flush stale NetBIOS names, expired Kerberos tickets, and cached DNS entries.
+
+---
+
+## Building and Compiling from Source
+
+### Prerequisites
+- Windows 10 / 11 / Server (x64 or ARM64)
+- PowerShell 5.1+
+- Inno Setup 6 (for building the installer)
+
+### Compile Portable Executable & Setup Installer
+```powershell
+powershell -ExecutionPolicy Bypass -File build\Compile-ToExe.ps1
+```
+This builds `release\WindowsPrinterSharingFix.exe`, generates `release\WindowsPrinterSharingFix_Installer.exe` using Inno Setup, bundles the latest offline documentation, and applies Authenticode digital signatures to both executables.
+
+---
+
+## License and Contribution
+
+This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**. Free to use, modify, and distribute for both personal and enterprise environments.
+
+Contributions and feedback are welcome! Please submit bug reports or feature requests via [GitHub Issues](https://github.com/khairudinfahmi/WindowsPrinterSharingFix/issues) or submit a Pull Request following our [CONTRIBUTING.md](CONTRIBUTING.md).
+
