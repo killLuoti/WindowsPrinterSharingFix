@@ -1,4 +1,4 @@
-$ProjectRoot = Split-Path $PSScriptRoot -Parent
+﻿$ProjectRoot = Split-Path $PSScriptRoot -Parent
 
 $SourceFile = Join-Path $ProjectRoot "src\WindowsPrinterSharingFix.ps1"
 $OutputDir  = Join-Path $ProjectRoot "release"
