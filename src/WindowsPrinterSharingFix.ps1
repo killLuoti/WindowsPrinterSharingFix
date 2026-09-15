@@ -2456,7 +2456,7 @@ function Fix-HostServerRole {
         Set-ItemProperty -Path $polPrint -Name RegisterSpoolerRemoteRpcEndPoint -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
     } catch {}
 
-    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [3/8] 正在将网络配置文件设置为“专用”..." } "EN" { "  [*] [3/8] Enforcing Network Connection Profile to Private..." } default { "  [*] [3/8] Mengubah Profil Jaringan ke Mode Private..." } }) -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [3/8] 正在将网络配置文件设置为「专用」..." } "EN" { "  [*] [3/8] Enforcing Network Connection Profile to Private..." } default { "  [*] [3/8] Mengubah Profil Jaringan ke Mode Private..." } }) -ForegroundColor Cyan
     Set-NetworkPrivate
 
     Write-Host $(switch ($script:lang) { "ZH" { "  [*] [4/8] 正在开启无密码共享与来宾访问权限..." } "EN" { "  [*] [4/8] Opening Passwordless Sharing & Guest Access Permissions..." } default { "  [*] [4/8] Membuka Akses Berbagi Tanpa Sandi & Izin Guest..." } }) -ForegroundColor Cyan
@@ -2695,7 +2695,7 @@ function AllFix-Core {
     Fix-RDPPrinter
     Manage-LPR
 
-    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [27/50] 正在强制网络连接配置文件为“专用”模式..." } "EN" { "  [*] [27/50] Forcing Network Connection Profiles to Private Mode..." } default { "  [*] [27/50] Mengubah Kategori Jaringan ke Mode Private..." } }) -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [27/50] 正在强制网络连接配置文件为「专用」模式..." } "EN" { "  [*] [27/50] Forcing Network Connection Profiles to Private Mode..." } default { "  [*] [27/50] Mengubah Kategori Jaringan ke Mode Private..." } }) -ForegroundColor Cyan
     Set-NetworkPrivate
 
     Write-Host $(switch ($script:lang) { "ZH" { "  [*] [28/50] 正在降低 Hyper-V / WSL 虚拟网络适配器优先级..." } "EN" { "  [*] [28/50] Deprioritizing Hyper-V / WSL Virtual Network Adapters..." } default { "  [*] [28/50] Menyesuaikan Prioritas Adaptor Jaringan Virtual Hyper-V..." } }) -ForegroundColor Cyan
@@ -2750,7 +2750,7 @@ function AllFix-Core {
     Write-Host $(switch ($script:lang) { "ZH" { "  [*] [44/50] 正在扫描并优化 V4 打印类驱动..." } "EN" { "  [*] [44/50] Scanning & Optimizing V4 Print Class Drivers..." } default { "  [*] [44/50] Memeriksa & Mengoptimalkan Driver Printer Kelas V4..." } }) -ForegroundColor Cyan
     Fix-V4ClassDriver
 
-    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [45/50] 正在将网络连接配置文件设为“专用”..." } "EN" { "  [*] [45/50] Securing Network Connection Profile to Private..." } default { "  [*] [45/50] Mengamankan Profil Jaringan ke Mode Private..." } }) -ForegroundColor Cyan
+    Write-Host $(switch ($script:lang) { "ZH" { "  [*] [45/50] 正在将网络连接配置文件设为「专用」..." } "EN" { "  [*] [45/50] Securing Network Connection Profile to Private..." } default { "  [*] [45/50] Mengamankan Profil Jaringan ke Mode Private..." } }) -ForegroundColor Cyan
     $profiles = Get-NetConnectionProfile -ErrorAction SilentlyContinue
     $profiles | Where-Object { $_.NetworkCategory -eq 'Public' } | Set-NetConnectionProfile -NetworkCategory Private -ErrorAction SilentlyContinue
 
@@ -2787,7 +2787,7 @@ function AllFix-Core {
     switch ($script:lang) {
         "ZH" {
             Write-Host "  [i] 域提示:如果此电脑加入了 Active Directory 域," -ForegroundColor Yellow
-            Write-Host "      请在 secpol.msc 中检查“从网络访问此计算机”权限。" -ForegroundColor Yellow
+            Write-Host "      请在 secpol.msc 中检查「从网络访问此计算机」权限。" -ForegroundColor Yellow
             Write-Host "  [i] 仍无法连接?请使用凭据注入 [菜单 6 -> 1] 或本地端口 UNC 映射 [菜单 7 -> 1]。" -ForegroundColor Green
         }
         "EN" {
@@ -3146,8 +3146,8 @@ function Show-Help {
                 Write-Host ""
                 Write-Host "  快速故障排查速查表:" -ForegroundColor Yellow
                 Write-Host "    - 一直提示输入密码?-> 运行菜单 3 -> 2(或输入 12 和 82)" -ForegroundColor White
-                Write-Host "    - 提示“拒绝访问”(Access Denied)?-> 通过菜单 6 -> 1 保存凭据(输入 60)" -ForegroundColor White
-                Write-Host "    - 提示“检查打印机名称”/ 错误 0x709?-> 通过菜单 7 -> 1 映射本地端口 UNC(输入 86)" -ForegroundColor White
+                Write-Host "    - 提示「拒绝访问」(Access Denied)?-> 通过菜单 6 -> 1 保存凭据(输入 60)" -ForegroundColor White
+                Write-Host "    - 提示「检查打印机名称」/ 错误 0x709?-> 通过菜单 7 -> 1 映射本地端口 UNC(输入 86)" -ForegroundColor White
                 Write-Host "    - 打印机一直处于离线状态?-> 通过菜单 8 -> 10 强制设为在线(输入 71)" -ForegroundColor White
                 Write-Host "    - 网络中看不到电脑?-> 运行菜单 3 -> 1 和菜单 3 -> 5" -ForegroundColor White
                 Write-Host "    - 想恢复之前的设置?-> 通过菜单 8 -> 2 运行注册表回滚(输入 65)" -ForegroundColor White
@@ -3560,7 +3560,7 @@ function Show-Submenu3 {
         Write-Host ""
         switch ($script:lang) {
             "ZH" {
-                Write-Host "  [1] 将网络配置文件切换为“专用”(打印机共享必需)" -ForegroundColor White
+                Write-Host "  [1] 将网络配置文件切换为「专用」(打印机共享必需)" -ForegroundColor White
                 Write-Host "  [2] 开启无密码共享(来宾访问与匿名共享)" -ForegroundColor Green
                 Write-Host "      (合并来宾权限并取消密码保护的共享)" -ForegroundColor Gray
                 Write-Host "  [3] 禁用 SMB 签名要求(修复 Win 11 连接打印机/NAS 失败)" -ForegroundColor White
@@ -3751,7 +3751,7 @@ function Show-Submenu5 {
         Write-Host ""
         switch ($script:lang) {
             "ZH" {
-                Write-Host "  [1] 强制结束锁定驱动的进程(“驱动程序正在使用中”)" -ForegroundColor White
+                Write-Host "  [1] 强制结束锁定驱动的进程(「驱动程序正在使用中」)" -ForegroundColor White
                 Write-Host "  [2] 禁用打印驱动程序隔离(防止单独进程崩溃)" -ForegroundColor White
                 Write-Host "  [3] 清理过时与损坏的驱动程序(通过 pnputil 清理驱动)" -ForegroundColor White
                 Write-Host "  [4] 移除幽灵与重复的 USB 打印机(Copy 1、Copy 2、失效端口)" -ForegroundColor White
@@ -4010,7 +4010,7 @@ function Show-Submenu8 {
                 Write-Host "  [7] 生成交互式 HTML 诊断报告" -ForegroundColor White
                 Write-Host "  [8] 扫描 Active Directory 域策略 / GPO 干预" -ForegroundColor White
                 Write-Host "  [9] 备份并将打印机迁移到另一台电脑(PrintBRM)" -ForegroundColor White
-                Write-Host "  [10] 强制打印机状态为“在线”(如果卡在离线状态)" -ForegroundColor White
+                Write-Host "  [10] 强制打印机状态为「在线」(如果卡在离线状态)" -ForegroundColor White
                 Write-Host "  [11] 打开 Windows 服务控制台 (services.msc)" -ForegroundColor White
                 Write-Host "  [12] 打开修复执行日志文件(日志管理器)" -ForegroundColor White
                 Write-Host "  [13] 快速系统诊断审计" -ForegroundColor White
